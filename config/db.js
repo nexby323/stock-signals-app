@@ -5,14 +5,7 @@ const mongoose = require('mongoose');
  */
 const connectDB = async () => {
     try {
-        /* 
-            connect to local database 
-            (127.0.0.1 is the loopback ip address (address of your computer) on port 27017) 
-            called stocks-signals
-        */
-        /*TODO:
-            add URI to the cloud mongoDB server
-        */
+        //the URI (connection string) to the database
         const mongoURI = process.env.MONGO_URI ;
         
         if (!mongoURI) {
