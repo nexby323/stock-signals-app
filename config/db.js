@@ -1,25 +1,15 @@
-const mongoose = require('mongoose');
+const { PrismaClient } = require('../generated/prisma');
 
-/**
- * async fucntion to connect to the database
- */
-const connectDB = async () => {
-    try {
-        //the URI (connection string) to the database
-        const mongoURI = process.env.MONGO_URI ;
-        
-        if (!mongoURI) {
-            console.error('[Database] ERROR: MONGO_URI is undefined! Check your .env file and dotenv setup.');
-            process.exit(1);
-        }
-        const conn = await mongoose.connect(mongoURI);
-        console.log(`[Database] MongoDB Connected successfully to host: ${conn.connection.host}`);
-        
-    } catch (error) {
-        console.error(`[Database] Connection failed: ${error.message}`);
-        //can stop the program if the database is not available 
-        process.exit(1); 
-    }
-};
+/*
+    prisma connects automatically on the first
+    query.
 
-module.exports = connectDB;
+    This is still the singleton pattern: because Node caches modules
+    this file only runs once no matter how many other files require it
+    so every part of the app shares this same PrismaClient instance
+    we chose to use singelton here because of the same reasoning as in MarketAPIClints.
+*/
+const prisma = new PrismaClient();
+
+// exporting the client instance directly (not a function like before since theres no separate connect step to trigger anymore)
+module.exports = prisma;
