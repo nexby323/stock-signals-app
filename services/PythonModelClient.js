@@ -1,7 +1,3 @@
-//get the function to create processes on the shell
-const {spawn} = require('child_process');
-//get the path to and from files more easly 
-const path = require('path');
 /**
  * Class to get data then "translate" them to "inter-language" langauge
  * send to the ML written on python and wait for response, done on seprate thread
