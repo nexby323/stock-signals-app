@@ -12,13 +12,19 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@prisma/client": "^7.9.0",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mongoose": "^9.8.0",
     "yahoo-finance2": "^4.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "@types/node": "^26.1.1",
+    "dotenv": "^17.4.2",
+    "nodemon": "^3.1.14",
+    "prisma": "^7.9.0"
+  },
+  "allowScripts": {
+    "prisma@7.9.0": true,
+    "@prisma/engines@7.9.0": true
   }
 }
