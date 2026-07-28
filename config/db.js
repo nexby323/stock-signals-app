@@ -1,25 +1,13 @@
-const mongoose = require('mongoose');
+require('dotenv').config(); // for loading the .env file 
+const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 
-/**
- * async fucntion to connect to the database
- */
-const connectDB = async () => {
-    try {
-        //the URI (connection string) to the database
-        const mongoURI = process.env.MONGO_URI ;
-        
-        if (!mongoURI) {
-            console.error('[Database] ERROR: MONGO_URI is undefined! Check your .env file and dotenv setup.');
-            process.exit(1);
-        }
-        const conn = await mongoose.connect(mongoURI);
-        console.log(`[Database] MongoDB Connected successfully to host: ${conn.connection.host}`);
-        
-    } catch (error) {
-        console.error(`[Database] Connection failed: ${error.message}`);
-        //can stop the program if the database is not available 
-        process.exit(1); 
-    }
-};
+// make the adapter that connects to the postgres (from the .env file)
+const adapter = new PrismaPg({ 
+    connectionString: process.env.DIRECT_URL 
+});
 
-module.exports = connectDB;
+// pass the adapter to the Prisma 
+const prisma = new PrismaClient({ adapter });
+
+module.exports = prisma;
