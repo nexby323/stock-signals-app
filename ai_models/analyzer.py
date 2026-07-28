@@ -17,7 +17,7 @@ def analyze_stock_data():
             return jsonify({"status": "error", "message": "No data provided"}), 400
 
         #TODO: really write an answer from the model
-        # here is the "inference" models are need to be
+        # here the "inference" models are need to be
         record_count = len(stock_data)
         
         response = {

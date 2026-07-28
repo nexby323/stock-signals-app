@@ -1,15 +1,13 @@
-const { PrismaClient } = require('../generated/prisma');
+require('dotenv').config(); // for loading the .env file 
+const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 
-/*
-    prisma connects automatically on the first
-    query.
+// make the adapter that connects to the postgres (from the .env file)
+const adapter = new PrismaPg({ 
+    connectionString: process.env.DIRECT_URL 
+});
 
-    This is still the singleton pattern: because Node caches modules
-    this file only runs once no matter how many other files require it
-    so every part of the app shares this same PrismaClient instance
-    we chose to use singelton here because of the same reasoning as in MarketAPIClints.
-*/
-const prisma = new PrismaClient();
+// pass the adapter to the Prisma 
+const prisma = new PrismaClient({ adapter });
 
-// exporting the client instance directly (not a function like before since theres no separate connect step to trigger anymore)
 module.exports = prisma;

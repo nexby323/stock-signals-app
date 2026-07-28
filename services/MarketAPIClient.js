@@ -1,5 +1,6 @@
 // https://www.npmjs.com/package/yahoo-finance2
-const yahooFinance = require('yahoo-finance2').default;
+const YahooFinance = require('yahoo-finance2').default;
+const yahooFinance = new YahooFinance();
 class MarketAPIClient
 {
     //create a constructor - currently not need a field
@@ -12,37 +13,34 @@ class MarketAPIClient
      * @param {int} daysAgo - information of the [currentDay-dayAgo,currentDay] days
      * @returns {Promise<{date: Date, open: number, high: number, low: number, close: number, volume: number}[]>} - data object from the API
      */
-    async fetchDailyData(symbol,daysAgo) {
+    async fetchDailyData(symbol, daysAgo) {
         try {
-            //for-now
-            console.log(`[MarketAPIClient] Fetching market data for ${symbol}...`);
+            console.log(`[MarketAPIClient] Fetching daily market data for ${symbol}...`);
             
             const queryOptions = {
-                period1: this._getPastDate(daysAgo), // from how many days ago to pull the data
-                interval: '1d' // daily data 
+                period1: this._getPastDate(daysAgo), // start date
+                period2: new Date().toISOString().split('T')[0], //the final data (current date)
+                interval: '1d' // daily info 
             };
 
-            const results = await yahooFinance.historical(symbol, queryOptions);
-            //for-now
             
-
-            //for-now
-            console.log(`[MarketAPIClient] Successfully fetched data for ${symbol}`);
-            //make the data on the "correct format"(pass every quote get the relevant data and put it in this order)
-            return results.map(quote => ({
+            const result = await yahooFinance.chart(symbol, queryOptions);
+            
+            console.log(`[MarketAPIClient] Successfully fetched daily data for ${symbol}`);
+            
+            
+            return result.quotes.map(quote => ({
                 date: quote.date,
                 open: quote.open,
                 high: quote.high,
                 low: quote.low,
                 close: quote.close,
                 volume: quote.volume
-            }));
+            })).filter(quote => quote.open !== null); // filter empty raw from the result 
 
-        } 
-        
-        catch (error) {  
-        console.error(`[MarketAPIClient] Failed to fetch daily data for ${symbol}:`, error.message);
-            throw error; //throw again to give the "main" - SystemController to handle this
+        } catch (error) {  
+            console.error(`[MarketAPIClient] Failed to fetch daily data for ${symbol}:`, error.message);
+            throw error; 
         }
     }
     /**
@@ -55,16 +53,16 @@ class MarketAPIClient
         try {
             console.log(`[MarketAPIClient] Fetching intraday data (${interval}) for ${symbol}...`);
             
-            // get chart 
+            
             const queryOptions = {
-                interval: interval,
-                range: '1mo' // 1 month ago - pretty sure its enough 
+                period1: this._getPastDate(30), //30 days ago 
+                period2: new Date().toISOString().split('T')[0], //today 
+                interval: interval
             };
 
             const result = await yahooFinance.chart(symbol, queryOptions);
             console.log(`[MarketAPIClient] Successfully fetched intraday data for ${symbol}`);
             
-            // pass on every quote from the quotes Objects array and put just this data and order them like this
             return result.quotes.map(quote => ({
                 date: quote.date,
                 open: quote.open,
@@ -72,7 +70,7 @@ class MarketAPIClient
                 low: quote.low,
                 close: quote.close,
                 volume: quote.volume
-            })).filter(quote => quote.open !== null); // filter empty rows 
+            })).filter(quote => quote.open !== null); //filter empty rows 
 
         } catch (error) {
             console.error(`[MarketAPIClient] Failed to fetch intraday data for ${symbol}:`, error.message);
