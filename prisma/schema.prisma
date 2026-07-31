@@ -19,7 +19,8 @@ model User {
   passwordHash String
   
 }
-
+//TODO: 
+//change this. 
 model Prediction {
   id              Int      @id @default(autoincrement())
   symbol          String
