@@ -1,13 +1,14 @@
 const express = require('express');//for creating the server
 const cron = require('node-cron');//for schedule jobs 
 const SystemController = require('./controllers/SystemController'); //get the manager class
-
+const cors = require('cors'); // for accessing from other devices to this server  
 //creating the site and define enviroment variables 
 const app = express(); 
 const PORT = process.env.PORT || 3000;
 
 // 
 app.use(express.json()); //make the server able to read JSON 
+app.use(cors()); // make the server able to get requests from other devices
 const systemController = new SystemController(); // create new object of the manager class 
 // =================
 // set schedule jobs
@@ -60,11 +61,72 @@ app.get('/api/analyze/:symbol', async (req, res) => {
     }
 });
 
+/**
+ * Route: POST /api/register
+ * Description: Create a new user in the system
+ */
+app.post('/api/register', async (req, res) => {
+    // Extract data sent from the mobile application
+    //of course need to add more feilds to the request from the app (this is the registration)
+    const { email, password } = req.body;
+ 
+    try {
+        console.log(`[Register Route] Received request for email: ${email}`);
+
+        // TODO: Insert the database INSERT query here
+        // ----------------------------------------------------
+        // for example... (idk)
+        // const result = await db.query(
+        //   'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id', 
+        //   [email, password]
+        // );
+        // ----------------------------------------------------
+
+        // For now, returning a mock success response so the app can proceed
+        res.status(201).json({ message: 'User registered successfully' });
+
+    } catch (error) {
+        console.error('[Register Route] Error:', error);
+        res.status(500).json({ error: 'Failed to register user. Internal server error.' });
+    }
+});
+
+/**
+ * Route: POST /api/login
+ * Description: Authenticate an existing user
+ */
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        console.log(`[Login Route] Attempt for email: ${email}`);
+
+        // TODO: Insert the database SELECT query here
+        // ----------------------------------------------------
+        // for example...
+        // const user = await db.query(
+        //   'SELECT * FROM users WHERE email = $1 AND password = $2', 
+        //   [email, password]
+        // );
+        // if (user.rows.length === 0) {
+        //     return res.status(401).json({ error: 'Invalid email or password' });
+        // }
+        // ----------------------------------------------------
+
+        // For now, returning a mock success response
+        res.status(200).json({ message: 'Login successful' });
+
+    } catch (error) {
+        console.error('[Login Route] Error:', error);
+        res.status(500).json({ error: 'Failed to authenticate user.' });
+    }
+});
+
 // ===============
 // activate server
 // ===============
 
 app.listen(PORT, () => {
     console.log(`[Server] Node.js backend is running on http://localhost:${PORT}`);
-    console.log(`[Server] Prisma will auto-connect on the first DB query.`);
+    console.log(`[Server] Ready to accept a connection from the mobile app `);
 });

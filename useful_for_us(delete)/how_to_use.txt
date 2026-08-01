@@ -1,0 +1,12 @@
+server side: 
+init: npm install on the first folders level  
+and put your .env file (with the DIRECT_URL)
+just run the command:
+npm run dev
+on the first level of file 
+you will see node on green and python on blue this is the servers for each one
+
+
+client side (application)
+init:
+go to mobile 
