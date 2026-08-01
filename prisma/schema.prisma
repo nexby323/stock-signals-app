@@ -72,9 +72,9 @@ model Alert {
 }
 
 // this model is so that every user has a list of all alerts they received, and every alert has a list of every user it went to 
-// we used an implicit many-to-many because we need to query/filter by
+// we used an explicit many-to-many because we need to query/filter by
 // when an alert was sent (for example for a daily summary) which a plain "connected or not"
-// relation cant support (like the one between Asset and User - explicit).
+// relation cant support (like the one between Asset and User - implicit).
 model UserAlert {
   id      Int      @id @default(autoincrement())
   sentAt  DateTime @default(now()) // the field that makes daily summary queries possible
