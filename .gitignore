@@ -1,3 +1,6 @@
 node_modules/
 .env
-
+dist/
+.prisma/
+mobile/node_modules/
+__pycache__/
