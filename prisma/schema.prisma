@@ -13,19 +13,76 @@ datasource db {
   provider = "postgresql"
 }
 
+// represents one user account. Only owns identityand login data and a watchlist
+// it does not directly own predictions or alerts. Alerts only connect to a User
+// through UserAlert (see below), never directly.
 model User {
-  id           Int    @id @default(autoincrement())
-  email        String @unique
-  passwordHash String
-  
+  id             Int         @id @default(autoincrement())
+  email          String      @unique // no two users can share an email
+  passwordHash   String
+  watchlist      Asset[] // not a real column. many-to-many with Asset (implicit - no extra data needed on this link)
+  receivedAlerts UserAlert[] // NOT a real column - list of every UserAlert row pointing at this user
 }
-//TODO: 
-//change this. 
-model Prediction {
-  id              Int      @id @default(autoincrement())
-  symbol          String
-  confidenceScore Float
-  isAnomaly       Boolean
-  rawAnalysis     String
-  createdAt       DateTime @default(now())
+
+// Represents one Asset tickerss current market snapshot (price/volume).
+// Knows nothing about any specific user or prediction beyond being referenced by them.
+model Asset {
+  ticker       String             @id //tickers are unique
+  companyName  String
+  currentPrice Float
+  volume       Int
+  updatedAt    DateTime           @updatedAt // auto updates to "now" every time this row is changed
+  watchedBy    User[] // not a real column. the other side of the watchlist many-to-many
+  predictions  PredictionResult[] // NOT a real column - every PredictionResult row whose ticker matches this asset
+}
+
+// completed ML analysis run, for onne asset at one point in time.
+// an asset accumulates many of these over time (one per day its analyzed) -
+// this is what builds our historical prediction record.
+// Cross-validation (comparing NN vs LSTM) already happened before this row
+// is created. only the final combined result gets stored here.
+model PredictionResult {
+  id                 Int      @id @default(autoincrement())
+  timestamp          DateTime @default(now()) // auto-fills with the current time if not given manually
+  confidenceLevel    Float
+  predictedDirection String
+  riskFactor         Int
+  asset              Asset    @relation(fields: [ticker], references: [ticker]) // the real foreign key column linking back to Asset
+  ticker             String
+  alert              Alert? // optional because most prediction wont trigger an alert
+}
+
+enum AlertType {
+  TREND
+  ANOMALY
+  SYSTEM
+}
+
+// exactly one Alert can exist per PredictionResult
+// this table does not track who it was sent to, only that it happened and why.
+// the user that actually received it lives in UserAlert instead.
+model Alert {
+  id           Int              @id @default(autoincrement())
+  type         AlertType
+  message      String
+  createdAt    DateTime         @default(now())
+  prediction   PredictionResult @relation(fields: [predictionId], references: [id])
+  predictionId Int              @unique // no two Alert with the same predictionId
+  recipients   UserAlert[] // not a real column every UserAlert row that references this alert
+}
+
+// this model is so that every user has a list of all alerts they received, and every alert has a list of every user it went to 
+// we used an explicit (creating a new table) many-to-many because we need to query/filter by
+// when an alert was sent (for example for a daily summary) which a plain "connected or not"
+// relation cant support (like the one between Asset and User which is implicit).
+model UserAlert {
+  id      Int      @id @default(autoincrement())
+  sentAt  DateTime @default(now()) // the field that makes daily summary queries possible
+  user    User     @relation(fields: [userId], references: [id])
+  userId  Int
+  alert   Alert    @relation(fields: [alertId], references: [id])
+  alertId Int
+
+  // this garentees that the pair userId and alertId together will be unique as it should be.
+  @@unique([userId, alertId])
 }
