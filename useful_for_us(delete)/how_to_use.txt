@@ -10,3 +10,11 @@ you will see node on green and python on blue this is the servers for each one
 client side (application)
 init:
 go to mobile 
+
+
+prisma:
+npx prisma generate : create prisma client
+npx prisma format  : auto allign our schema file (purely cosmetic but we should do it before commiting changes)
+npx prisma validate: will check if our prisma schema file has errors in it 
+npx prisma migrate dev --name the_migration_name : the actual migreation that will chnage our database
+npx prisma migrate reset : use it to reset the current tabels in supabase (only if you know there is no data there worth keeping!)

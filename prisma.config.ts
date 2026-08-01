@@ -9,11 +9,7 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // Prisma v7 (the version we are using) removed the separate directUrl field - theres now only one "url"
-    // used for both migrations and regular app queries. Migrations need a direct
-    // (doesnt go through the connection pooling) connection, so we use DIRECT_URL here rather than the pooled
-    // DATABASE_URL. At our projects scale, skipping the pooler for normal queries (like changing data)
-    // has no real downside
+    // we use direct_url here because when we do migrations we cat to go through the pooling process. we need to get straight to the db
     url: env("DIRECT_URL"),
   },
 });
