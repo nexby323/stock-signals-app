@@ -29,7 +29,7 @@ cron.schedule('0 2 * * *', async () => {
 // ===========
 // make routes
 // ===========
-
+systemController.initializeSystem();
 // validate that the server is on 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'active', message: 'Server is running' });
@@ -119,6 +119,69 @@ app.post('/api/login', async (req, res) => {
     } catch (error) {
         console.error('[Login Route] Error:', error);
         res.status(500).json({ error: 'Failed to authenticate user.' });
+    }
+});
+
+/**
+ * Route: GET /api/stocks
+ * Description: Fetches analyzed market data using the SystemController and returns it to the client.
+ */
+app.get('/api/stocks', async (req, res) => {
+    try {
+        console.log(`[Stocks Route] Requesting analysis via SystemController...`);
+        
+        const symbol = 'AAPL'; //TODO: take this from the symbol the user choose
+
+        // this call activate the analysis on synbol
+        const controllerResult = await systemController.triggerManualAnalysis(symbol);
+        
+        const rawDailyData = controllerResult.rawDailyData;
+        const aiAnalysis = controllerResult.analysis;
+
+        // make the data with the format of the application
+        
+        // take the data of the day and the one before for the application 
+        const latestRecord = rawDailyData[rawDailyData.length - 1];
+        const previousRecord = rawDailyData[rawDailyData.length - 2];
+        
+        const currentPrice = latestRecord ? latestRecord.close : 0;
+        const prevClose = previousRecord ? previousRecord.close : currentPrice;
+        
+        const priceDiff = currentPrice - prevClose;
+        const trendPct = ((priceDiff / prevClose) * 100).toFixed(2);
+        const isUp = priceDiff >= 0;
+        const trendString = `${isUp ? '+' : ''}${trendPct}%`;
+
+        const stocksPayload = [{
+            id: '1',
+            symbol: symbol,
+            name: 'Apple Inc.',
+            price: currentPrice,
+            trend: trendString,
+            isUp: isUp,
+            //maybe add this (confidence of the model)
+            aiConfidence: aiAnalysis.confidence_score 
+        }];
+
+        // make the data for the graph 
+        const recentSlice = rawDailyData.slice(-6);
+        const chartPayload = {
+            labels: recentSlice.map(item => {
+                const d = new Date(item.date);
+                return `${d.getMonth() + 1}/${d.getDate()}`;
+            }),
+            datasets: [{ data: recentSlice.map(item => item.close) }]
+        };
+
+        // response to the client 
+        res.status(200).json({
+            stocks: stocksPayload,
+            chart: chartPayload
+        });
+
+    } catch (error) {
+        console.error('[Stocks Route] Error:', error.message);
+        res.status(500).json({ error: 'Failed to process stock analysis.' });
     }
 });
 

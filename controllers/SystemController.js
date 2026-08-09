@@ -1,6 +1,6 @@
 const MarketAPIClient = require('../services/MarketAPIClient');
 const db = require('../config/db');
-const PythonModelClient = require('../services/PythonModelClient')
+const PythonModelClient = require('../services/PythonModelClient');
 //bouble space+enter make a newline on the javadoc
 /**
  * class to manage and schedule all the:   
@@ -128,7 +128,8 @@ class SystemController
         const result = {
                 success: true,
                 symbol: symbol,
-                analysis: aiAnalysis
+                analysis: aiAnalysis,
+                rawDailyData: dailyData
         };
 
         //store the result in the data base
@@ -169,6 +170,7 @@ class SystemController
 
         // 2. temporary
         try {
+            
             // temp
             const savedRecord = await this.dataBase.prediction.create({
                 data: {

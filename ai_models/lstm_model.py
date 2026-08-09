@@ -173,7 +173,7 @@ class TrendLSTM:
         
         
      
-    def predict(self,processed_data: np.ndarray,last_actual_price:float) -> Dict[str,Union[float,int]]:
+    def predict(self, processed_data: np.ndarray, last_actual_price: float, n_iterations: int = 50) -> Dict[str, Union[float, str]]:
         """
         Executes model inference on preprocessed window data and converts the output to financial metrics.
 
@@ -181,32 +181,77 @@ class TrendLSTM:
         and performs an inverse transformation to retrieve the predicted price in USD. It calculates 
         the expected percentage change and determines the market trend direction.
 
+        Integrated Monte Carlo (MC) Dropout to calculate a confidence percentage. 
+        https://medium.com/@ciaranbench/monte-carlo-dropout-a-practical-guide-4b4dc18014b5
+        MC dropout explanetion (by Yarin Gal Israel on the map!): 
+        During the inferece time of the model ignores from the Dropout layers and do not throw any data (as explaind above, this is during the training time).
+        With this techniqe we pass the same input n_iterations but the dropout layer are turned on, so we recive as a result n_iterations similar predictions.
+        So we get ditribution of the prediction, on this distribution we can calculate the mean and std, and then infering: if the model has
+        low std, this means that this is not really make a diffrence which neuron we deactivate and the model predicts high confidence on the conncetions. 
+        And the opposite is also true (high std means low confidence). 
+        This directly supports the 'confidenceLevel' field required by the Prisma 'PredictionResult' model.
+
         Args:
             processed_data (np.ndarray): A 3D NumPy array of scaled feature data with shape 
                                          (1, sequence_length, 5).
             last_actual_price (float): The actual closing price (in USD) of the most recent trading day.
+            n_iterations (int, optional): Number of stochastic forward passes for MC Dropout. Defaults to 50.
 
         Returns:
             Dict[str, Union[float, str]]: A structured dictionary containing:
                 - 'last_actual_price' (float): The current base price.
                 - 'predicted_price' (float): The forecasted price for the next trading session.
                 - 'expected_change_pct' (float): The projected percentage change.
-                - 'trend_direction' (str): The overall trend direction ("BULLISH" or "BEARISH").
+                - 'trend_direction' (str): The overall trend direction ("BULLISH" or "BEARISH"). 
+                                           Maps to 'predictedDirection' in the DB.
+                - 'confidence_level' (float): The model's certainty percentage (0.0 to 100.0). 
+                                              Maps to 'confidenceLevel' in the DB.
         """
-        # get raw normalized prediction
-        raw_prediction = self.model.predict(processed_data, verbose=0)
-        #convert back to money (USD$) the prediction
-        predicted_price = self.target_scaler.inverse_transform(raw_prediction)[0][0]
+        
+        # --- MC Dropout for Confidence Calculation ---
+        # Instead of getting one raw prediction (self.model.predict), we run the model N times 
+        # with training=True. This keeps the Dropout layers active during inference, creating 
+        # a distribution of slightly different predictions.
+        stochastic_predictions = []
+        for _ in range(n_iterations):
+            # get raw normalized prediction (with dropout enabled)
+            raw_pred = self.model(processed_data, training=True)
+            stochastic_predictions.append(raw_pred.numpy()[0][0])
+            
+        stochastic_predictions = np.array(stochastic_predictions)
+        
+        # Calculate the mean (average prediction) and standard deviation (variance/uncertainty)
+        mean_scaled_pred = np.mean(stochastic_predictions)
+        std_scaled_pred = np.std(stochastic_predictions)
+
+        # convert back to money (USD$) the prediction (using the mean of our stochastic runs)
+        mean_pred_2d = np.array([[mean_scaled_pred]])
+        predicted_price = self.target_scaler.inverse_transform(mean_pred_2d)[0][0]
         
         price_diff = predicted_price - last_actual_price
         expected_change_pct = (price_diff / last_actual_price) * 100
         
         trend = "BULLISH" if expected_change_pct > 0 else "BEARISH"
 
-        #the object that the node-js will get
+        # --- Calculate the Confidence Level (%) ---
+        # We use the Coefficient of Variation (CV = std / mean). 
+        # A high standard deviation means the model's predictions are scattered (low confidence).
+        # A low standard deviation means the model is consistent (high confidence).
+        if mean_scaled_pred == 0:
+            confidence_level = 0.0
+        else:
+            cv = std_scaled_pred / abs(mean_scaled_pred)
+            # 500 is a scaling factor to penalize variance. Can be adjusted based on testing.
+            raw_confidence = 100.0 - (cv * 500) 
+            confidence_level = max(0.0, min(100.0, raw_confidence))
+
+        # the object that the node-js will get
+        # Note: 'confidence_level' maps directly to Prisma's PredictionResult.confidenceLevel
+        # 'trend_direction' maps directly to Prisma's PredictionResult.predictedDirection
         return {
             "last_actual_price": float(last_actual_price),
             "predicted_price": float(predicted_price),
             "expected_change_pct": float(expected_change_pct),
-            "trend_direction": trend
+            "trend_direction": trend,
+            "confidence_level": float(confidence_level)
         }
