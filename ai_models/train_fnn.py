@@ -71,10 +71,10 @@ def train_and_save_model():
 
     print("5. Saving model weights and the scaler rules...")
     # Save the learned weights
-    fnn.model.save_weights("ai_models/nn_weights.weights.h5")
+    fnn.model.save_weights("ai_models/fnn_weights.weights.h5")
     
     # Save the scaling rule
-    fnn.save_scaler("ai_models/nn_scaler.save")
+    fnn.save_scaler("ai_models/fnn_scaler.save")
     
     print("Done! Weights and Scaler saved successfully.")
 
