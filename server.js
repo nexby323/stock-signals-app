@@ -1,7 +1,11 @@
-const express = require('express');//for creating the server
-const cron = require('node-cron');//for schedule jobs 
-const SystemController = require('./controllers/SystemController'); //get the manager class
+const express = require('express'); //for creating the server
+const cron = require('node-cron'); //for schedule jobs 
 const cors = require('cors'); // for accessing from other devices to this server  
+const bcrypt = require('bcrypt'); // Added for secure password hashing
+
+const SystemController = require('./controllers/SystemController'); //get the manager class
+const prisma = require('./config/db'); // get the Prisma Singleton instance for DB access
+
 //creating the site and define enviroment variables 
 const app = express(); 
 const PORT = process.env.PORT || 3000;
@@ -10,6 +14,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json()); //make the server able to read JSON 
 app.use(cors()); // make the server able to get requests from other devices
 const systemController = new SystemController(); // create new object of the manager class 
+
 // =================
 // set schedule jobs
 // =================
@@ -26,15 +31,16 @@ cron.schedule('0 2 * * *', async () => {
 }, {
     timezone: "Asia/Jerusalem" // make Israel time 
 });
+
 // ===========
 // make routes
 // ===========
-systemController.initializeSystem();
+// systemController.initializeSystem(); // Uncomment if you have an initialization method
+
 // validate that the server is on 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'active', message: 'Server is running' });
 });
-
 
 app.get('/api/analyze/:symbol', async (req, res) => {
     try {
@@ -63,27 +69,39 @@ app.get('/api/analyze/:symbol', async (req, res) => {
 
 /**
  * Route: POST /api/register
- * Description: Create a new user in the system
+ * Description: Create a new user in the system using Prisma and secure password hashing
  */
 app.post('/api/register', async (req, res) => {
     // Extract data sent from the mobile application
-    //of course need to add more feilds to the request from the app (this is the registration)
+    // of course need to add more feilds to the request from the app (this is the registration)
     const { email, password } = req.body;
  
     try {
         console.log(`[Register Route] Received request for email: ${email}`);
 
-        // TODO: Insert the database INSERT query here
-        // ----------------------------------------------------
-        // for example... (idk)
-        // const result = await db.query(
-        //   'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id', 
-        //   [email, password]
-        // );
-        // ----------------------------------------------------
+        // 1. Check if user already exists
+        const existingUser = await prisma.user.findUnique({
+            where: { email: email }
+        });
 
-        // For now, returning a mock success response so the app can proceed
-        res.status(201).json({ message: 'User registered successfully' });
+        if (existingUser) {
+            return res.status(400).json({ error: 'User already exists with this email.' });
+        }
+
+        // 2. Hash the password for security (never store plain text in DB)
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // 3. Insert the database query here via Prisma
+        const newUser = await prisma.user.create({
+            data: {
+                email: email,
+                passwordHash: hashedPassword
+            }
+        });
+
+        // Returning success response so the app can proceed
+        res.status(201).json({ message: 'User registered successfully', userId: newUser.id });
 
     } catch (error) {
         console.error('[Register Route] Error:', error);
@@ -93,7 +111,7 @@ app.post('/api/register', async (req, res) => {
 
 /**
  * Route: POST /api/login
- * Description: Authenticate an existing user
+ * Description: Authenticate an existing user by comparing hashed passwords
  */
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
@@ -101,20 +119,25 @@ app.post('/api/login', async (req, res) => {
     try {
         console.log(`[Login Route] Attempt for email: ${email}`);
 
-        // TODO: Insert the database SELECT query here
-        // ----------------------------------------------------
-        // for example...
-        // const user = await db.query(
-        //   'SELECT * FROM users WHERE email = $1 AND password = $2', 
-        //   [email, password]
-        // );
-        // if (user.rows.length === 0) {
-        //     return res.status(401).json({ error: 'Invalid email or password' });
-        // }
-        // ----------------------------------------------------
+        //Find the user in the database
+        const user = await prisma.user.findUnique({
+            where: { email: email }
+        });
 
-        // For now, returning a mock success response
-        res.status(200).json({ message: 'Login successful' });
+        // If user not found
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        //Compare provided password with the hashed password stored in DB
+        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+
+        if (!isPasswordValid) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Returning success response
+        res.status(200).json({ message: 'Login successful', userId: user.id });
 
     } catch (error) {
         console.error('[Login Route] Error:', error);
@@ -125,22 +148,21 @@ app.post('/api/login', async (req, res) => {
 /**
  * Route: GET /api/stocks
  * Description: Fetches analyzed market data using the SystemController and returns it to the client.
+ * Accepts a 'symbol' query parameter to dynamically fetch data for a specific stock.
  */
 app.get('/api/stocks', async (req, res) => {
     try {
-        console.log(`[Stocks Route] Requesting analysis via SystemController...`);
+        // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL'
+        const symbol = (req.query.symbol || 'AAPL').toUpperCase();
+        console.log(`[Stocks Route] Requesting analysis via SystemController for: ${symbol}`);
         
-        const symbol = 'AAPL'; //TODO: take this from the symbol the user choose
-
-        // this call activate the analysis on synbol
+        // This call activates the analysis on the specific symbol
         const controllerResult = await systemController.triggerManualAnalysis(symbol);
         
         const rawDailyData = controllerResult.rawDailyData;
         const aiAnalysis = controllerResult.analysis;
 
-        // make the data with the format of the application
-        
-        // take the data of the day and the one before for the application 
+        // Format the data for the mobile application dashboard
         const latestRecord = rawDailyData[rawDailyData.length - 1];
         const previousRecord = rawDailyData[rawDailyData.length - 2];
         
@@ -148,22 +170,21 @@ app.get('/api/stocks', async (req, res) => {
         const prevClose = previousRecord ? previousRecord.close : currentPrice;
         
         const priceDiff = currentPrice - prevClose;
-        const trendPct = ((priceDiff / prevClose) * 100).toFixed(2);
+        const trendPct = prevClose > 0 ? ((priceDiff / prevClose) * 100).toFixed(2) : "0.00";
         const isUp = priceDiff >= 0;
         const trendString = `${isUp ? '+' : ''}${trendPct}%`;
 
         const stocksPayload = [{
             id: '1',
             symbol: symbol,
-            name: 'Apple Inc.',
+            name: `${symbol} Corp`, // Fallback name, can be enhanced with real company names later
             price: currentPrice,
             trend: trendString,
             isUp: isUp,
-            //maybe add this (confidence of the model)
-            aiConfidence: aiAnalysis.confidence_score 
+            aiConfidence: aiAnalysis.confidence_score || 0 
         }];
 
-        // make the data for the graph 
+        // Prepare the chart dataset (last 6 data points)
         const recentSlice = rawDailyData.slice(-6);
         const chartPayload = {
             labels: recentSlice.map(item => {
@@ -173,7 +194,7 @@ app.get('/api/stocks', async (req, res) => {
             datasets: [{ data: recentSlice.map(item => item.close) }]
         };
 
-        // response to the client 
+        // Respond to the client with the tailored data
         res.status(200).json({
             stocks: stocksPayload,
             chart: chartPayload
