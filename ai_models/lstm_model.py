@@ -67,6 +67,8 @@ from sklearn.preprocessing import MinMaxScaler
 
 #for type hinting about methods 
 from typing import List, Dict, Tuple, Union
+# used to save and load the scaler rules to a file
+import joblib
 
 class TrendLSTM:
     def __init__(self, sequence_length=60) -> None:
@@ -157,9 +159,12 @@ class TrendLSTM:
         
         # fit the target scaler specifically on the 'close' prices (need this)
         close_prices = df[['close']].values
-        self.target_scaler.fit(close_prices)
         #apply the normalization 
-        scaled_data = self.scaler.fit_transform(features)
+        # We use .transform() here, NOT .fit_transform().
+        # We want to shrink the new data using the exact same min/max rules the model learned during training.
+        # If we use fit_transform() here the model may get a brand new scale (if the high and low here are different from the one we got in training) 
+        # which will lead to confusion.
+        scaled_data = self.feature_scaler.transform(features)
         
         #take just the windows of the recent sequence_length days 
         recent_window = scaled_data[-self.sequence_length:]
@@ -255,3 +260,20 @@ class TrendLSTM:
             "trend_direction": trend,
             "confidence_level": float(confidence_level)
         }
+
+    def save_scaler(self, file_path: str) -> None:
+        """
+        Saves both the feature and target scaler rules for the LSTM model.
+        """
+        joblib.dump({
+            'feature_scaler': self.feature_scaler,
+            'target_scaler': self.target_scaler
+        }, file_path)
+
+    def load_scaler(self, file_path: str) -> None:
+        """
+        Loads both saved scaler rules.
+        """
+        scalers = joblib.load(file_path)
+        self.feature_scaler = scalers['feature_scaler']
+        self.target_scaler = scalers['target_scaler']
