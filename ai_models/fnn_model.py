@@ -46,6 +46,8 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 # used to shrink our numbers so the model can digest them easily
 from sklearn.preprocessing import MinMaxScaler
+# used to save and load the scaler rules to a file
+import joblib 
 
 class IntradayFeatureStructure:
     def __init__(self) -> None:
@@ -83,9 +85,9 @@ class IntradayFeatureStructure:
         """
         # Simple Moving Averages (SMA)
         # calculate the short term average
-        df["SMA_short"] = df["close"].rolling(window=self.sma_short).mean()
+        df["sma_short"] = df["close"].rolling(window=self.sma_short).mean()
         # calculate the long term average
-        df["SMA_long"] = df["close"].rolling(window=self.sma_long).mean()
+        df["sma_long"] = df["close"].rolling(window=self.sma_long).mean()
 
         # Relative Strength Index (RSI)
         # calculate the difference in price from the previous step
@@ -98,9 +100,9 @@ class IntradayFeatureStructure:
         # calculate the relative strength (RS), avoiding division by zero
         rs = gain / loss.replace(0, np.nan) 
         # apply the RSI formula to normalize the value between 0 and 100
-        df["RSI"] = 100 - (100 / (1 + rs))
+        df["rsi"] = 100 - (100 / (1 + rs))
         # fill any edge case NaN values with a neutral/high value 
-        df["RSI"] = df["RSI"].fillna(100) 
+        df["rsi"] = df["rsi"].fillna(100) 
 
         # MACD (Moving Average Convergence Divergence)
         # calculate the 12-period Exponential Moving Average
@@ -108,9 +110,9 @@ class IntradayFeatureStructure:
         # calculate the 26-period Exponential Moving Average
         ema_26 = df["close"].ewm(span=26, adjust=False).mean()
         # the MACD line is the difference between the two EMAs
-        df["MACD"] = ema_12 - ema_26
+        df["macd"] = ema_12 - ema_26
         # the signal line is a 9-period EMA of the MACD line
-        df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+        df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
 
         # Bollinger Bands (BB)
         # calculate the 20-period simple moving average for the middle band
@@ -118,9 +120,9 @@ class IntradayFeatureStructure:
         # calculate the rolling standard deviation
         std_20 = df["close"].rolling(window=self.bb_period).std()
         # upper band is SMA + (2 * standard deviation)
-        df["BB_upper"] = sma_20 + (std_20 * 2)
+        df["bb_upper"] = sma_20 + (std_20 * 2)
         # lower band is SMA - (2 * standard deviation)
-        df["BB_lower"] = sma_20 - (std_20 * 2)
+        df["bb_lower"] = sma_20 - (std_20 * 2)
 
         # drop any rows that contain NaN values created by the rolling windows
         df_clean = df.dropna().reset_index(drop=True)
@@ -184,7 +186,11 @@ class IntradayNN:
                        "BB_upper", "BB_lower"]].values
         
         # shrink all the hints to a 0-1 scale
-        scaled_features = self.feature_scaler.fit_transform(features)
+        # We use .transform() here, NOT .fit_transform().
+        # We want to shrink the new data using the exact same min/max rules the model learned during training.
+        # If we use fit_transform() here the model may get a brand new scale (if the high and low here are different from the one we got in training) 
+        # which will lead to confusion.
+        scaled_features = self.feature_scaler.transform(features)
         
         # grab the very last row (the current moment in the market) for prediction
         current_moment = scaled_features[-1]
@@ -246,4 +252,17 @@ class IntradayNN:
             "probability_up": float(mean_prob_up),
             "confidence_level": float(confidence_level)
         }
+
+    def save_scaler(self, file_path: str) -> None:
+        """
+        Saves the fitted scaler rules to a file so we can reuse the exact same scale later.
+        """
+        joblib.dump(self.feature_scaler, file_path)
+
+    def load_scaler(self, file_path: str) -> None:
+        """
+        Loads the saved scaler rules from a file into our machine.
+        """
+        self.feature_scaler = joblib.load(file_path)
+
     
