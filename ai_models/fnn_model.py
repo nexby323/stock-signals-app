@@ -182,8 +182,8 @@ class IntradayNN:
         """
         # separate the columns we want to use as hints
         features = df[["open", "high", "low", "close", "volume", 
-                       "SMA_short", "SMA_long", "RSI", "MACD", "MACD_Signal", 
-                       "BB_upper", "BB_lower"]].values
+                       "sma_short", "sma_long", "rsi", "macd", "macd_signal", 
+                       "bb_upper", "bb_lower"]].values
         
         # shrink all the hints to a 0-1 scale
         # We use .transform() here, NOT .fit_transform().
