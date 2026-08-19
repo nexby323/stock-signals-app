@@ -2,9 +2,14 @@ const express = require('express'); //for creating the server
 const cron = require('node-cron'); //for schedule jobs 
 const cors = require('cors'); // for accessing from other devices to this server  
 const bcrypt = require('bcrypt'); // Added for secure password hashing
+const jwt = require('jsonwebtoken') // added this to use for user authentication
 
 const SystemController = require('./controllers/SystemController'); //get the manager class
 const prisma = require('./config/db'); // get the Prisma Singleton instance for DB access
+
+// The secret key used to for our tokens. 
+// It looks in the .env file first, and uses a temporary one if not found.
+const JWT_SECRET = process.env.JWT_SECRET || 'maayan_oshri_likes_boys_123';
 
 //creating the site and define enviroment variables 
 const app = express(); 
@@ -31,6 +36,30 @@ cron.schedule('0 2 * * *', async () => {
 }, {
     timezone: "Asia/Jerusalem" // make Israel time 
 });
+
+ // Middleware function to verify the JWT token.
+ // Added to any route that we want to protect from unauthorized access.
+ 
+ function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    // The token format is usually "Bearer eyJhbGciOi...". we do authHeader && here so if authHeader is undefined we won't get an error
+    const token = authHeader && authHeader.split(' ')[1];
+
+    // no token
+    if (!token) {
+        return res.status(401).json({ error: 'Access denied. No token provided.' });
+    }
+
+    // verify the token
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid or expired token.' });
+        }
+        // Save the decoded user info (like userId) so the next route can use it
+        req.user = decoded; 
+        next(); // Let the user pass to the requested route
+    });
+}
 
 // ===========
 // make routes
@@ -115,7 +144,7 @@ app.post('/api/register', async (req, res) => {
  */
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
-
+    
     try {
         console.log(`[Login Route] Attempt for email: ${email}`);
 
@@ -136,8 +165,22 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
 
+        // generate the jwt
+        const token = jwt.sign(
+            { userId: user.id }, // Payload
+            JWT_SECRET,          // The Server's Stamp
+            { expiresIn: '7d' }  // Token lifespan
+        );
+
+        res.status(200).json({ 
+            message: 'Login successful', 
+            userId: user.id,
+            token: token // Sending the token to the mobile app
+        });
+
+
         // Returning success response
-        res.status(200).json({ message: 'Login successful', userId: user.id });
+        res.status(200).json({ message: 'Login successful', userId: user.id, token: token });
 
     } catch (error) {
         console.error('[Login Route] Error:', error);
