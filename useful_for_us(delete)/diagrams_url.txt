@@ -1,0 +1,7 @@
+UML - https://online.visual-paradigm.com/share.jsp?id=343637303534392d32
+use_case - https://online.visual-paradigm.com/share.jsp?id=343637303534392d32
+activity_diagram - https://online.visual-paradigm.com/share.jsp?id=343637303534392d33
+
+
+https://mermaid.ai/app/projects/2cd822fd-7f2e-4948-b24f-1b3a7cbaf437/diagrams/adcd0536-8a52-4655-ac54-4e08698d7cb7/share/invite/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkb2N1bWVudElEIjoiYWRjZDA1MzYtOGE1Mi00NjU1LWFjNTQtNGUwODY5OGQ3Y2I3IiwiYWNjZXNzIjoiRWRpdCIsImlhdCI6MTc4Njk2ODMwN30.e493Qoq3VNl6CrDyWVfuCXTOHeMvOjRnSrfmcfSarnI?entryPoint=share-modal
+

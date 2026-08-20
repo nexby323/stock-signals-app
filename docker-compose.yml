@@ -1,0 +1,50 @@
+# docker-compose.yml
+# Orchestrates the entire backend infrastructure for the AI Stock Predictor
+
+
+services:
+  # 1. Database Service: PostgreSQL
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: stock_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # 2. Python AI Microservice
+  ml-service:
+    build: 
+      context: ./ai_models
+    container_name: stock_ml_python
+    restart: always
+    ports:
+      - "5000:5000"
+    # No DB dependency needed, Python only communicates with Node
+
+  # 3. Node.js Main API
+  # 3. Node.js Main API
+  node-backend:
+    build: 
+      context: .
+    container_name: stock_node_api
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://admin:local_dev_password@postgres-db:5432/stock_predictor_db?schema=public"
+      DIRECT_URL: "postgresql://admin:local_dev_password@postgres-db:5432/stock_predictor_db?schema=public"
+      PORT: 3000
+      PYTHON_API_URL: "http://ml-service:5000"
+    depends_on:
+      - postgres-db
+      - ml-service
+    command: sh -c "npx prisma db push && node server.js"
+# Defines persistent storage for the database so data isn't lost on restart
+volumes:
+  pgdata:

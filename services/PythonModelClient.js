@@ -14,7 +14,7 @@ class PythonModelClient
     {
         try {
             // send to the flask python server-this is the pipeline
-            const pythonServerUrl = 'http://127.0.0.1:5000/analyze';
+            const pythonServerUrl  = process.env.PYTHON_API_URL || 'http://localhost:5000';
 
             // HTTP POST request 
             const response = await fetch(pythonServerUrl, {
