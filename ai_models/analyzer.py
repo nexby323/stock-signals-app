@@ -17,6 +17,9 @@ import traceback
 
 from fnn_model import IntradayFeatureStructure, IntradayNN
 from lstm_model import TrendLSTM
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # init the Flask web server
 app = Flask(__name__)
@@ -30,8 +33,8 @@ fnn_model = IntradayNN()
 
 try:
     # try loading the weights and scalers for the fnn model
-    fnn_model.model.load_weights("ai_models/fnn_weights.weights.h5")
-    fnn_model.load_scaler("ai_models/fnn_scaler.save")
+    fnn_weights_path = os.path.join(BASE_DIR, 'fnn_weights.weights.h5')
+    fnn_scaler_path = os.path.join(BASE_DIR, 'scaler_fnn.pkl')
     print("[OK] FNN weights and scaler loaded successfully.")
 except Exception as e:
     print(f"[ERROR] Could not load FNN files: {e}")
@@ -42,8 +45,8 @@ lstm_model = TrendLSTM()
 
 try:
     # try loading the weights and scalers for the lstm model
-    lstm_model.model.load_weights("ai_models/lstm_weights.weights.h5")
-    lstm_model.load_scaler("ai_models/lstm_scaler.save")
+    lstm_weights_path = os.path.join(BASE_DIR, 'lstm_weights.weights.h5')
+    lstm_scalers_path = os.path.join(BASE_DIR, 'scalers_lstm.pkl')
     print("[OK] LSTM weights and scalers loaded successfully.")
 except Exception as e:
     print(f"[ERROR] Could not load LSTM files: {e}")
@@ -120,4 +123,4 @@ def analyze_stock_data():
 if __name__ == '__main__':
     # Start the server on localhost (127.0.0.1) port 5000
     # debug=True allows us to change the code while ther server is up and it whill refresh
-    app.run(host='0.0.0.0', port=5000,debug= True)
+    app.run(host='127.0.0.1', port=5000, debug=True)
