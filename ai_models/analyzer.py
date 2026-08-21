@@ -14,7 +14,8 @@ from flask import Flask, request, jsonify
 import pandas as pd
 # helps us print detailed errors to the terminal if there is a crush
 import traceback
-
+#for loacting file paths
+import os 
 from fnn_model import IntradayFeatureStructure, IntradayNN
 from lstm_model import TrendLSTM
 import os
@@ -23,6 +24,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # init the Flask web server
 app = Flask(__name__)
+
+
+# find the exact path of this file (to be able to locate accuratly the model data)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 print("Starting Python AI Server...")
 
@@ -35,6 +40,9 @@ try:
     # try loading the weights and scalers for the fnn model
     fnn_weights_path = os.path.join(BASE_DIR, 'fnn_weights.weights.h5')
     fnn_scaler_path = os.path.join(BASE_DIR, 'scaler_fnn.pkl')
+    # uses absolute path to load the cached data  
+    fnn_model.model.load_weights(os.path.join(BASE_DIR, "fnn_weights.weights.h5"))
+    fnn_model.load_scaler(os.path.join(BASE_DIR, "fnn_scaler.save"))
     print("[OK] FNN weights and scaler loaded successfully.")
 except Exception as e:
     print(f"[ERROR] Could not load FNN files: {e}")
@@ -47,6 +55,8 @@ try:
     # try loading the weights and scalers for the lstm model
     lstm_weights_path = os.path.join(BASE_DIR, 'lstm_weights.weights.h5')
     lstm_scalers_path = os.path.join(BASE_DIR, 'scalers_lstm.pkl')
+    lstm_model.model.load_weights(os.path.join(BASE_DIR, "lstm_weights.weights.h5"))
+    lstm_model.load_scaler(os.path.join(BASE_DIR, "lstm_scaler.save"))
     print("[OK] LSTM weights and scalers loaded successfully.")
 except Exception as e:
     print(f"[ERROR] Could not load LSTM files: {e}")
