@@ -8,7 +8,7 @@ const PythonModelClient = require('../services/PythonModelClient');
  * process the data on fixed time in the day  
  * save the result on database
  */
-//not a singleton because it logicly OK to create multiple object 
+//not a singleton because it is logicly OK to create multiple objects
 // for example when testing if we want: 
 //const testController = new SystemController(mockDb, mockPython, mockApi); for mock data we can do this 
 class SystemController
@@ -41,29 +41,46 @@ class SystemController
     {
 
         console.log('[SystemController] Starting daily analysis batch...');
-        //TODO:
-        //load the data from the database
-        //for now just mock data
-        const userWatchList = ['AAPL','MSTF','TSLA'];
 
-        //maybe store this on the database
+        let userWatchList = [];
+
+        try {
+            // fetch all unique stocks currently tracked in our database (the asset table).
+            // Using 'select' ensures we only pull the 'ticker' column, saving memory and bandwidth.
+            const assets = await this.dataBase.Asset.findMany({
+                select: { ticker: true }
+            });
+            
+            // Transform Prisma's array of objects into a simple flat array of strings (for example ['AAPL', 'NVDA'])
+            userWatchList = assets.map(asset => asset.ticker);
+            
+            // if the database is empty abort analasis to not waist resources
+            if (userWatchList.length === 0) {
+                console.log('[SystemController] Database is empty. No stocks to analyze tonight.');
+                return;
+            }
+            
+            console.log(`[SystemController] Found ${userWatchList.length} stocks in DB to analyze.`);
+            
+        } catch (dbError) {
+            console.error('[SystemController] Failed to fetch stocks from DB:', dbError.message);
+            return;
+        }
+
         const dailySummery = []; 
-        //create a function to do a delay of ms miliseconds
-        /*
-        await keyword does not waiting on the normal way, actually they pass immediately, but await wait when 
-        the object is a promise, we pass to the setTimeout the resolve function- when ms miliseconds are passed call resolve
-        the await waits for the promise to finish, after the time pass the promise is fulfilled (call to resolve)
 
-        */
+        // Helper function to create a delay. 
+        // This prevents rate limiting (getting temporarily blocked) by the external Yahoo Finance API.
         const delay = (ms) => new Promise(resolve=> setTimeout(resolve,ms));
+
         for(const symbol of userWatchList){
             try
             {
                 //get the result of the model about the symbol
-                result = await this.triggerManualAnalysis(symbol);
-                //maybe store this on the user table or something 
+                // Yahoo API -> Python ML Microservice -> DB Save
+                const result = await this.triggerManualAnalysis(symbol);
                 dailySummery.push(result);
-                //not flood the yahoo server with requests
+                //not flood the yahoo server with requests (respect the API rate limits)
                 await delay(2000); 
 
             }
@@ -71,13 +88,12 @@ class SystemController
             {
                 console.error(`[SystemController] Failed analysis for ${symbol}.`);
                 //for the database indicate about error
-                errorObject = [] 
+                const errorObject = { symbol: symbol, error: true }
                 dailySummery.push(errorObject);
             }
-            console.log(`[SystemController] Daily batch completed. Processed ${batchResults.length} stocks.`);
-
-
         }
+
+        console.log(`[SystemController] Daily batch completed. Processed ${batchResults.length} stocks.`);
     }
     /**
      * initialize system when the server activates  

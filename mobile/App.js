@@ -133,7 +133,7 @@ function AuthScreen({ navigation }) {
       const data = await response.json();
       
       if (response.ok) {
-        navigation.replace('Home', { userEmail: email, userId: data.userId });
+        navigation.replace('Home', { userEmail: email, userId: data.userId, token: data.token });
       } else {
         setErrorMessage(data.error || 'Authentication failed. Please try again.');
       }
@@ -184,7 +184,7 @@ function AuthScreen({ navigation }) {
 // 4. HOME / DASHBOARD SCREEN
 // ==========================================
 function HomeScreen({ route, navigation }) {
-  const { userEmail, userId } = route.params || { userEmail: 'User', userId: null };
+  const { userEmail, userId, token } = route.params || { userEmail: 'User', userId: null, token: null };
   const { isDarkMode, setIsDarkMode, theme } = useContext(ThemeContext);
   
   const [userWatchlist, setUserWatchlist] = useState(['AAPL', 'NVDA', 'TSLA']); 
@@ -228,11 +228,19 @@ function HomeScreen({ route, navigation }) {
   }, [selectedSymbol]);
 
   const fetchUserWatchlist = async () => {
+    if(!userId || !token) return;
     try {
-      // Future DB Endpoint: `${SERVER_URL}/api/users/${userId}/watchlist`
-      const personalWatchlist = ['AAPL', 'NVDA', 'TSLA', 'MSFT']; 
-      setUserWatchlist(personalWatchlist);
-      setSelectedSymbol(personalWatchlist[0]);
+      const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {headers: {'Authorization': `Bearer ${token}`}});
+      const data = await response.json();
+      
+      if (response.ok && data.watchlist && data.watchlist.length > 0) {
+        setUserWatchlist(data.watchlist);
+        setSelectedSymbol(data.watchlist[0]);
+      } else {
+        // in case this is the first time connecting and DB is still empty
+        setUserWatchlist(['VOO']); 
+        setSelectedSymbol('VOO');
+      }
     } catch (error) {
       console.error("Failed to load user watchlist:", error);
     }
@@ -243,9 +251,11 @@ function HomeScreen({ route, navigation }) {
    * @param {boolean} showLoader - True to show full screen spinner, False for silent background refresh
    */
   const fetchStockData = async (symbol, showLoader = true) => {
+    if (!token) return;
     if (showLoader) setIsLoading(true);
     try {
-      const response = await fetch(`${SERVER_URL}/api/stocks?symbol=${symbol}`);
+      const response = await fetch(`${SERVER_URL}/api/stocks?symbol=${symbol}`, {headers: {'Authorization': `Bearer ${token}`}});
+      
       const data = await response.json();
       if (response.ok) {
         setStockData(data.stocks);
@@ -260,22 +270,43 @@ function HomeScreen({ route, navigation }) {
 
   /**
    * Handles adding a new ticker to the local watchlist.
-   * TODO: Connect to backend route to persist in Prisma User table.
    */
-  const handleAddStock = () => {
+  const handleAddStock = async () => {
     const formattedSymbol = newSymbol.trim().toUpperCase();
-    if (formattedSymbol && !userWatchlist.includes(formattedSymbol)) {
-      setUserWatchlist([...userWatchlist, formattedSymbol]);
-      setSelectedSymbol(formattedSymbol);
+    if (formattedSymbol && !userWatchlist.includes(formattedSymbol) && token) {
+      try {
+        // save the new asset in Prisma through the server
+        const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}` 
+          },
+          body: JSON.stringify({ symbol: formattedSymbol })
+        });
+        
+        if (response.ok) {
+          // only if the server OKed the save in our DB we update the user screen
+          setUserWatchlist([...userWatchlist, formattedSymbol]);
+          setSelectedSymbol(formattedSymbol);
+        } else {
+          Alert.alert("Error", "Could not add stock to your DB watchlist.");
+        }
+      } catch (error) {
+        Alert.alert("Network Error", "Could not reach the server.");
+      }
     }
     setAddModalVisible(false);
     setNewSymbol('');
   };
 
   const runMachineLearningAnalysis = async () => {
+    if (!token) return;
     setIsAILoading(true);
+
     try {
-      const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`);
+      const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`, {headers: {'Authorization': `Bearer ${token}`}});
+      
       const data = await response.json();
 
       if (response.ok && data.success) {
@@ -292,7 +323,6 @@ function HomeScreen({ route, navigation }) {
 
         // Update UI with the result
         setAiResult(mockLstmResponse);
-
         // Process through Factory for Push Notifications
         const alarm = AlarmFactory.generateAlarm(selectedSymbol, mockLstmResponse, mockFnnResponse);
         if (alarm) {
