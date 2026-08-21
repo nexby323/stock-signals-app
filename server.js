@@ -71,31 +71,6 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'active', message: 'Server is running' });
 });
 
-app.get('/api/analyze/:symbol', async (req, res) => {
-    try {
-        //TODO:
-        //make the stock symbol pulling process, more robust 
-        const symbol = req.params.symbol.toUpperCase();
-        
-        console.log(`[Server] Received analysis request for: ${symbol}`);
-
-        // make call to the stock analysis function 
-        const result = await systemController.triggerManualAnalysis(symbol);
-        
-        // return to the client the result (with sucess flag)
-        res.status(200).json(result);
-        
-    } catch (error) {
-        console.error('[Server] Error handling /api/analyze:', error.message);
-        
-        // return to the client about the error (on the server side)
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to process analysis request' 
-        });
-    }
-});
-
 /**
  * Route: POST /api/register
  * Description: Create a new user in the system using Prisma and secure password hashing
@@ -177,23 +152,24 @@ app.post('/api/login', async (req, res) => {
             userId: user.id,
             token: token // Sending the token to the mobile app
         });
-
-
-        // Returning success response
-        res.status(200).json({ message: 'Login successful', userId: user.id, token: token });
-
+        
     } catch (error) {
         console.error('[Login Route] Error:', error);
-        res.status(500).json({ error: 'Failed to authenticate user.' });
+        res.status(500).json({ error: 'Failed to register user. Internal server error.' });
     }
 });
+
+
+// ===========
+// PROTECTED ROUTES (Requires Token)
+// ===========
 
 /**
  * Route: GET /api/stocks
  * Description: Fetches analyzed market data using the SystemController and returns it to the client.
  * Accepts a 'symbol' query parameter to dynamically fetch data for a specific stock.
  */
-app.get('/api/stocks', async (req, res) => {
+app.get('/api/stocks',authenticateToken, async (req, res) => {
     try {
         // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL'
         const symbol = (req.query.symbol || 'AAPL').toUpperCase();
@@ -246,6 +222,128 @@ app.get('/api/stocks', async (req, res) => {
     } catch (error) {
         console.error('[Stocks Route] Error:', error.message);
         res.status(500).json({ error: 'Failed to process stock analysis.' });
+    }
+});
+
+/**
+ * Route: GET //api/analyze/:symbol
+ * Description: triggers a manual stock analysis for the specified symbol.
+ */
+app.get('/api/analyze/:symbol', authenticateToken, async (req, res) => {
+    try {
+        //TODO:
+        //make the stock symbol pulling process, more robust 
+        const symbol = req.params.symbol.toUpperCase();
+        
+        console.log(`[Server] Received analysis request for: ${symbol}`);
+
+        // make call to the stock analysis function 
+        const result = await systemController.triggerManualAnalysis(symbol);
+        
+        // return to the client the result (with sucess flag)
+        res.status(200).json(result);
+        
+    } catch (error) {
+        console.error('[Server] Error handling /api/analyze:', error.message);
+        
+        // return to the client about the error (on the server side)
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to process analysis request' 
+        });
+    }
+});
+
+/**
+ * Route: GET /api/users/:id/watchlist
+ * Description: Fetches the personalized watchlist for a specific user.
+ */
+app.get('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
+    // Extract the user ID from the URL parameters and parse it as an integer
+    const requestedUserId = parseInt(req.params.id);
+
+    // We use the decoded token payload (req.user) provided by the authenticateToken middleware.
+    // If the token's userId does not match the requested URL userId, the user is trying 
+    // to access someone else's data. In that case, we block the request.
+    if (req.user.userId !== requestedUserId) {
+        return res.status(403).json({ error: 'Cannot view another user\'s watchlist.' });
+    }
+
+    try {
+        // Ask Prisma to find the user by their ID
+        const user = await prisma.user.findUnique({
+            where: { id: requestedUserId },
+            // The include command tells Prisma to fetch not just the user, 
+            // but also all associated assets from the implicit watchlist junction table.
+            include: { watchlist: true } 
+        });
+
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // At this point, user.watchlist contains full Asset objects (price, volume, and so on).
+        // The mobile app only expects an array of ticker strings (like 'AAPL').
+        // The map function iterates over the objects and extracts just the 'ticker' field.
+        const symbols = user.watchlist.map(asset => asset.ticker);
+        res.status(200).json({ watchlist: symbols });
+
+    } catch (error) {
+        console.error('[Watchlist GET] Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch watchlist' });
+    }
+});
+
+/**
+ * Route: POST /api/users/:id/watchlist
+ * Description: Adds a new stock symbol to the user's watchlist.
+ */
+app.post('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
+    // Extract the user ID from the URL parameters
+    const requestedUserId = parseInt(req.params.id);
+    const { symbol } = req.body;
+    
+    //ensure the user can only add stocks to their own watchlist
+    if (req.user.userId !== requestedUserId) {
+        return res.status(403).json({ error: 'Cannot modify another user\'s watchlist.' });
+    }
+
+    if (!symbol) return res.status(400).json({ error: 'Symbol is required' });
+
+    try {
+        // handle the asset table
+        // Before connecting an asset to a user, it must exist in the database.
+        // 'upsert' attempts to update the record. If it doesn't exist, it creates it.
+        await prisma.asset.upsert({
+            where: { ticker: symbol },
+            update: {}, // If it already exists, do nothing (leave the current price as is)
+            create: {
+                // If it doesn't exist, create it with default zero values.
+                // The automated Cron Job or the next manual analysis will update it with real data.
+                ticker: symbol,
+                companyName: symbol,
+                currentPrice: 0.0,
+                volume: 0
+            }
+        });
+
+        // Create the many to many relationship
+        // Now that the asset definitely exists, we can link it to the user.
+        await prisma.user.update({
+            where: { id: requestedUserId },
+            data: {
+                // Access the user's watchlist relation field
+                watchlist: {
+                    // Prisma's 'connect' command links the user and the asset.
+                    // It creates a new row in the junction table without deleting existing items.
+                    connect: { ticker: symbol }
+                }
+            }
+        });
+
+        res.status(200).json({ message: 'Stock added to watchlist successfully', symbol });
+
+    } catch (error) {
+        console.error('[Watchlist POST] Error:', error.message);
+        res.status(500).json({ error: 'Failed to add stock to watchlist' });
     }
 });
 
