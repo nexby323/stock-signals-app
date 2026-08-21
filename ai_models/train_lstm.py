@@ -54,10 +54,10 @@ def train_and_save_lstm():
 
     print("4. Saving LSTM model weights and scalers...")
     # Save the learned weights
-    lstm.model.save_weights("ai_models/lstm_weights.weights.h5")
+    lstm.model.save_weights("lstm_weights.weights.h5")
     
     # Save the scaling rule
-    lstm.save_scaler("ai_models/lstm_scaler.save")
+    lstm.save_scaler("lstm_scaler.save")
     
     print("Done! Weights and Scaler saved successfully.")
     

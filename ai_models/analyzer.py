@@ -131,6 +131,6 @@ def analyze_stock_data():
 
 
 if __name__ == '__main__':
-    # Start the server on localhost (127.0.0.1) port 5000
+    # Start the server on host 0.0.0.0 with port 5000 (meaning everyone in the same LAN as the server can acsess it )
     # debug=True allows us to change the code while ther server is up and it whill refresh
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
