@@ -3,9 +3,11 @@ const cron = require('node-cron'); //for schedule jobs
 const cors = require('cors'); // for accessing from other devices to this server  
 const bcrypt = require('bcrypt'); // Added for secure password hashing
 const jwt = require('jsonwebtoken') // added this to use for user authentication
-
 const SystemController = require('./controllers/SystemController'); //get the manager class
 const prisma = require('./config/db'); // get the Prisma Singleton instance for DB access
+const MarketAPIClient = require('./services/MarketAPIClient'); // for the /api/stocks route so we can acsess daily data fast (without going through the ai models)
+
+const marketApiClient = new MarketAPIClient();
 
 // The secret key used to for our tokens. 
 // It looks in the .env file first, and uses a temporary one if not found.
@@ -69,6 +71,31 @@ cron.schedule('0 2 * * *', async () => {
 // validate that the server is on 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'active', message: 'Server is running' });
+});
+
+app.get('/api/analyze/:symbol', async (req, res) => {
+    try {
+        //TODO:
+        //make the stock symbol pulling process, more robust 
+        const symbol = req.params.symbol.toUpperCase();
+        
+        console.log(`[Server] Received analysis request for: ${symbol}`);
+
+        // make call to the stock analysis function 
+        const result = await systemController.triggerManualAnalysis(symbol);
+        
+        // return to the client the result (with sucess flag)
+        res.status(200).json(result);
+        
+    } catch (error) {
+        console.error('[Server] Error handling /api/analyze:', error.message);
+        
+        // return to the client about the error (on the server side)
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to process analysis request' 
+        });
+    }
 });
 
 /**
@@ -152,34 +179,30 @@ app.post('/api/login', async (req, res) => {
             userId: user.id,
             token: token // Sending the token to the mobile app
         });
-        
+
+
+        // Returning success response
+        res.status(200).json({ message: 'Login successful', userId: user.id, token: token });
+
     } catch (error) {
         console.error('[Login Route] Error:', error);
-        res.status(500).json({ error: 'Failed to register user. Internal server error.' });
+        res.status(500).json({ error: 'Failed to authenticate user.' });
     }
 });
-
-
-// ===========
-// PROTECTED ROUTES (Requires Token)
-// ===========
 
 /**
  * Route: GET /api/stocks
  * Description: Fetches analyzed market data using the SystemController and returns it to the client.
  * Accepts a 'symbol' query parameter to dynamically fetch data for a specific stock.
  */
-app.get('/api/stocks',authenticateToken, async (req, res) => {
+app.get('/api/stocks', async (req, res) => {
     try {
-        // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL'
+        // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL' (if lets say someone acsess this route from the browser. we dont want to crush so we'll use APPL as default)
         const symbol = (req.query.symbol || 'AAPL').toUpperCase();
-        console.log(`[Stocks Route] Requesting analysis via SystemController for: ${symbol}`);
+        console.log(`[Stocks Route] Requesting lightweight chart data via MarketAPIClient for: ${symbol}`);
         
-        // This call activates the analysis on the specific symbol
-        const controllerResult = await systemController.triggerManualAnalysis(symbol);
-        
-        const rawDailyData = controllerResult.rawDailyData;
-        const aiAnalysis = controllerResult.analysis;
+        // Direct call for raw daily data of the symbol (the asset)
+        const rawDailyData = await marketApiClient.fetchDailyData(symbol);
 
         // Format the data for the mobile application dashboard
         const latestRecord = rawDailyData[rawDailyData.length - 1];
@@ -200,7 +223,7 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
             price: currentPrice,
             trend: trendString,
             isUp: isUp,
-            aiConfidence: aiAnalysis.confidence_score || 0 
+            aiConfidence: 0 // Set to 0 by default. The real AI confidence is fetched only when triggering the /api/analyze route.
         }];
 
         // Prepare the chart dataset (last 6 data points)
@@ -213,7 +236,7 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
             datasets: [{ data: recentSlice.map(item => item.close) }]
         };
 
-        // Respond to the client with the tailored data
+        // Respond to the client with the tailored lightweight data
         res.status(200).json({
             stocks: stocksPayload,
             chart: chartPayload
@@ -221,129 +244,7 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('[Stocks Route] Error:', error.message);
-        res.status(500).json({ error: 'Failed to process stock analysis.' });
-    }
-});
-
-/**
- * Route: GET //api/analyze/:symbol
- * Description: triggers a manual stock analysis for the specified symbol.
- */
-app.get('/api/analyze/:symbol', authenticateToken, async (req, res) => {
-    try {
-        //TODO:
-        //make the stock symbol pulling process, more robust 
-        const symbol = req.params.symbol.toUpperCase();
-        
-        console.log(`[Server] Received analysis request for: ${symbol}`);
-
-        // make call to the stock analysis function 
-        const result = await systemController.triggerManualAnalysis(symbol);
-        
-        // return to the client the result (with sucess flag)
-        res.status(200).json(result);
-        
-    } catch (error) {
-        console.error('[Server] Error handling /api/analyze:', error.message);
-        
-        // return to the client about the error (on the server side)
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to process analysis request' 
-        });
-    }
-});
-
-/**
- * Route: GET /api/users/:id/watchlist
- * Description: Fetches the personalized watchlist for a specific user.
- */
-app.get('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
-    // Extract the user ID from the URL parameters and parse it as an integer
-    const requestedUserId = parseInt(req.params.id);
-
-    // We use the decoded token payload (req.user) provided by the authenticateToken middleware.
-    // If the token's userId does not match the requested URL userId, the user is trying 
-    // to access someone else's data. In that case, we block the request.
-    if (req.user.userId !== requestedUserId) {
-        return res.status(403).json({ error: 'Cannot view another user\'s watchlist.' });
-    }
-
-    try {
-        // Ask Prisma to find the user by their ID
-        const user = await prisma.user.findUnique({
-            where: { id: requestedUserId },
-            // The include command tells Prisma to fetch not just the user, 
-            // but also all associated assets from the implicit watchlist junction table.
-            include: { watchlist: true } 
-        });
-
-        if (!user) return res.status(404).json({ error: 'User not found' });
-
-        // At this point, user.watchlist contains full Asset objects (price, volume, and so on).
-        // The mobile app only expects an array of ticker strings (like 'AAPL').
-        // The map function iterates over the objects and extracts just the 'ticker' field.
-        const symbols = user.watchlist.map(asset => asset.ticker);
-        res.status(200).json({ watchlist: symbols });
-
-    } catch (error) {
-        console.error('[Watchlist GET] Error:', error.message);
-        res.status(500).json({ error: 'Failed to fetch watchlist' });
-    }
-});
-
-/**
- * Route: POST /api/users/:id/watchlist
- * Description: Adds a new stock symbol to the user's watchlist.
- */
-app.post('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
-    // Extract the user ID from the URL parameters
-    const requestedUserId = parseInt(req.params.id);
-    const { symbol } = req.body;
-    
-    //ensure the user can only add stocks to their own watchlist
-    if (req.user.userId !== requestedUserId) {
-        return res.status(403).json({ error: 'Cannot modify another user\'s watchlist.' });
-    }
-
-    if (!symbol) return res.status(400).json({ error: 'Symbol is required' });
-
-    try {
-        // handle the asset table
-        // Before connecting an asset to a user, it must exist in the database.
-        // 'upsert' attempts to update the record. If it doesn't exist, it creates it.
-        await prisma.asset.upsert({
-            where: { ticker: symbol },
-            update: {}, // If it already exists, do nothing (leave the current price as is)
-            create: {
-                // If it doesn't exist, create it with default zero values.
-                // The automated Cron Job or the next manual analysis will update it with real data.
-                ticker: symbol,
-                companyName: symbol,
-                currentPrice: 0.0,
-                volume: 0
-            }
-        });
-
-        // Create the many to many relationship
-        // Now that the asset definitely exists, we can link it to the user.
-        await prisma.user.update({
-            where: { id: requestedUserId },
-            data: {
-                // Access the user's watchlist relation field
-                watchlist: {
-                    // Prisma's 'connect' command links the user and the asset.
-                    // It creates a new row in the junction table without deleting existing items.
-                    connect: { ticker: symbol }
-                }
-            }
-        });
-
-        res.status(200).json({ message: 'Stock added to watchlist successfully', symbol });
-
-    } catch (error) {
-        console.error('[Watchlist POST] Error:', error.message);
-        res.status(500).json({ error: 'Failed to add stock to watchlist' });
+        res.status(500).json({ error: 'Failed to fetch lightweight stock data.' });
     }
 });
 
