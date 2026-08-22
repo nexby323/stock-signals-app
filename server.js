@@ -344,6 +344,40 @@ app.post('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
     }
 });
 
+/**
+ * Route: GET /api/users/:id/notifications
+ * Description: Retrieves the chronological history of system alerts assigned to a specific user.
+ *              Secured via JWT to ensure users can only access their own notification history.
+ * 
+ * @param {Request} req - Express request object containing the user ID in params.
+ * @param {Response} res - Express response object.
+ */
+app.get('/api/users/:id/notifications', authenticateToken, async (req, res) => {
+    const requestedUserId = parseInt(req.params.id);
+
+    // Security Check: Ensure the authenticated user is requesting their own data
+    if (req.user.userId !== requestedUserId) {
+        return res.status(403).json({ error: 'Unauthorized: Cannot view another user\'s notifications.' });
+    }
+
+    try {
+        // Query the database for the user's alerts.
+        // Prisma's 'include' ensures we retrieve the actual alert message mapped to the UserAlert junction table.
+        // 'orderBy' ensures the most recent alerts are rendered at the top of the mobile UI.
+        const userAlerts = await prisma.userAlert.findMany({
+            where: { userId: requestedUserId },
+            include: { alert: true },
+            orderBy: { sentAt: 'desc' }
+        });
+
+        res.status(200).json(userAlerts);
+        
+    } catch (error) {
+        console.error('[Notifications GET] Database query failed:', error.message);
+        res.status(500).json({ error: 'Failed to retrieve notification history.' });
+    }
+});
+
 // ===============
 // activate server
 // ===============

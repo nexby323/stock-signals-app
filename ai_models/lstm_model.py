@@ -239,20 +239,25 @@ class TrendLSTM:
         trend = "BULLISH" if expected_change_pct > 0 else "BEARISH"
 
         # --- Calculate the Confidence Level (%) ---
-        # We use the Coefficient of Variation (CV = std / mean). 
-        # A high standard deviation means the model's predictions are scattered (low confidence).
-        # A low standard deviation means the model is consistent (high confidence).
+        # Instead of utilizing the Coefficient of Variation (CV) which penalizes 
+        # predictions whose means are close to zero, we rely directly on the 
+        # standard deviation (variance) of the scaled stochastic predictions.
+        # Given normalized data [0, 1], a standard deviation of 0.25 represents maximum uncertainty.
+        
         if mean_scaled_pred == 0:
             confidence_level = 0.0
         else:
-            cv = std_scaled_pred / abs(mean_scaled_pred)
-            # 500 is a scaling factor to penalize variance. Can be adjusted based on testing.
-            raw_confidence = 100.0 - (cv * 500) 
+            # Calculate the uncertainty penalty based on raw standard deviation.
+            # Scaling factor: 0.25 represents near-total uncertainty in a bounded [0,1] space.
+            max_expected_variance = 0.25 
+            penalty = (std_scaled_pred / max_expected_variance) * 100.0 
+            
+            raw_confidence = 100.0 - penalty
+            
+            # Ensure the final confidence score remains strictly bounded between 0% and 100%
             confidence_level = max(0.0, min(100.0, raw_confidence))
 
-        # the object that the node-js will get
-        # Note: 'confidence_level' maps directly to Prisma's PredictionResult.confidenceLevel
-        # 'trend_direction' maps directly to Prisma's PredictionResult.predictedDirection
+        # Construct and return the strictly formatted response payload for Node.js
         return {
             "last_actual_price": float(last_actual_price),
             "predicted_price": float(predicted_price),

@@ -109,6 +109,13 @@ function AuthScreen({ navigation }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  
+  
+  /**
+   * Handles both User Registration and Login flows.
+   * On successful registration, redirects the user to the login view to prevent 
+   * accessing protected routes without a valid JWT token.
+   */
   const handleAuthentication = async () => {
     setErrorMessage('');
     
@@ -116,7 +123,7 @@ function AuthScreen({ navigation }) {
       return setErrorMessage('Please fill in all fields.');
     }
 
-    // Client-side regex check. (Backend does the actual cryptographic verification)
+    // Client-side regex check (Backend performs the actual cryptographic verification)
     if (!isLogin && !isPasswordStrong(password)) {
       return setErrorMessage('Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character.');
     }
@@ -133,7 +140,15 @@ function AuthScreen({ navigation }) {
       const data = await response.json();
       
       if (response.ok) {
-        navigation.replace('Home', { userEmail: email, userId: data.userId, token: data.token });
+        if (isLogin) {
+          // Proceed to Dashboard only upon successful login with a valid token
+          navigation.replace('Home', { userEmail: email, userId: data.userId, token: data.token });
+        } else {
+          // Registration successful: Alert the user and switch to the Login UI
+          Alert.alert("Success", "Account created successfully! Please log in to continue.");
+          setIsLogin(true);
+          setPassword(''); // Clear sensitive input
+        }
       } else {
         setErrorMessage(data.error || 'Authentication failed. Please try again.');
       }
@@ -183,78 +198,108 @@ function AuthScreen({ navigation }) {
 // ==========================================
 // 4. HOME / DASHBOARD SCREEN
 // ==========================================
+// ==========================================
+// 4. HOME / DASHBOARD SCREEN
+// ==========================================
 function HomeScreen({ route, navigation }) {
+  // Extract user identity and JWT token from navigation parameters
   const { userEmail, userId, token } = route.params || { userEmail: 'User', userId: null, token: null };
   const { isDarkMode, setIsDarkMode, theme } = useContext(ThemeContext);
   
+  // Application State
   const [userWatchlist, setUserWatchlist] = useState(['AAPL', 'NVDA', 'TSLA']); 
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
-  
   const [isLoading, setIsLoading] = useState(true);
   const [isAILoading, setIsAILoading] = useState(false);
   const [stockData, setStockData] = useState([]);
   const [chartData, setChartData] = useState({ labels: [], datasets: [{ data: [] }] });
-  
-  // State to hold the latest AI Analysis result for display
   const [aiResult, setAiResult] = useState(null);
   
-  // State for Add Stock Modal
+  // Modals State
   const [isAddModalVisible, setAddModalVisible] = useState(false);
   const [newSymbol, setNewSymbol] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationsVisible, setNotificationsVisible] = useState(false);
 
-  // Initial load
+  // Initialize application and fetch initial watchlist
   useEffect(() => {
     NotificationService.requestPermissions();
     fetchUserWatchlist(); 
   }, []);
 
-  // Fetch data when symbol changes
+  // Fetch fresh market data whenever the selected symbol changes
   useEffect(() => {
     if (selectedSymbol) {
-      setAiResult(null); // Clear previous AI results when switching stocks
+      setAiResult(null); // Clear previous AI results when switching context
       fetchStockData(selectedSymbol);
     }
   }, [selectedSymbol]);
 
-  // Background Polling mechanism: Fetch updated market data every 60 seconds
+  // Background Polling mechanism: Fetch updated market data every 60 seconds silently
   useEffect(() => {
     if (!selectedSymbol) return;
     const intervalId = setInterval(() => {
-      fetchStockData(selectedSymbol, false); // Fetch silently (without loading spinner)
+      fetchStockData(selectedSymbol, false); 
     }, 60000); 
 
-    // Cleanup interval on unmount
     return () => clearInterval(intervalId);
   }, [selectedSymbol]);
 
+  /**
+   * Retrieves the authenticated user's custom watchlist from the database.
+   */
   const fetchUserWatchlist = async () => {
     if(!userId || !token) return;
     try {
-      const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {headers: {'Authorization': `Bearer ${token}`}});
+      const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {
+        headers: {'Authorization': `Bearer ${token}`}
+      });
       const data = await response.json();
       
       if (response.ok && data.watchlist && data.watchlist.length > 0) {
         setUserWatchlist(data.watchlist);
         setSelectedSymbol(data.watchlist[0]);
       } else {
-        // in case this is the first time connecting and DB is still empty
+        // Fallback for brand new accounts with an empty DB
         setUserWatchlist(['VOO']); 
         setSelectedSymbol('VOO');
       }
     } catch (error) {
-      console.error("Failed to load user watchlist:", error);
+      console.error("[Home] Failed to load user watchlist:", error);
     }
   };
 
   /**
+   * Retrieves chronological system alerts targeted at the current user.
+   */
+  const fetchNotifications = async () => {
+    if (!token || !userId) return;
+    try {
+      const response = await fetch(`${SERVER_URL}/api/users/${userId}/notifications`, {
+        headers: {'Authorization': `Bearer ${token}`}
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data);
+      }
+    } catch (error) {
+      console.error("[Home] Failed to load notifications:", error);
+    }
+  };
+
+  /**
+   * Fetches the lightweight chart payload for the active symbol.
+   * 
    * @param {string} symbol - Ticker to fetch
-   * @param {boolean} showLoader - True to show full screen spinner, False for silent background refresh
+   * @param {boolean} showLoader - Dictates whether to display the full-screen loading overlay
    */
   const fetchStockData = async (symbol, showLoader = true) => {
     if (!token) return;
     if (showLoader) setIsLoading(true);
     try {
-      const response = await fetch(`${SERVER_URL}/api/stocks?symbol=${symbol}`, {headers: {'Authorization': `Bearer ${token}`}});
+      const response = await fetch(`${SERVER_URL}/api/stocks?symbol=${symbol}`, {
+        headers: {'Authorization': `Bearer ${token}`}
+      });
       
       const data = await response.json();
       if (response.ok) {
@@ -269,23 +314,23 @@ function HomeScreen({ route, navigation }) {
   };
 
   /**
-   * Handles adding a new ticker to the local watchlist.
+   * Validates and persists a new ticker to the user's database record.
    */
   const handleAddStock = async () => {
     const formattedSymbol = newSymbol.trim().toUpperCase();
     if (formattedSymbol && !userWatchlist.includes(formattedSymbol) && token) {
       try {
-        // Validate the symbol by checking if Yahoo Finance recognizes it.
+        // Validate the symbol via Yahoo Finance proxy
         const validationResponse = await fetch(`${SERVER_URL}/api/stocks?symbol=${formattedSymbol}`, {
           headers: {'Authorization': `Bearer ${token}`}
         });
         
-        // If the server returns an error (because Yahoo didn't find the stock), we stop here.
         if (!validationResponse.ok) {
-            Alert.alert("Invalid Ticker", `Could not find market data for ${formattedSymbol}. Please check the symbol and try again.`);
-            return; // Exit the function early so we don't save a fake stock to the DB
+            Alert.alert("Invalid Ticker", `Could not find market data for ${formattedSymbol}.`);
+            return;
         }
-        // If validation passed, proceed to save the new asset in Prisma through the server
+
+        // Persist validated asset to DB
         const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {
           method: 'POST',
           headers: { 
@@ -296,11 +341,10 @@ function HomeScreen({ route, navigation }) {
         });
         
         if (response.ok) {
-          // only if the server OKed the save in our DB we update the user screen
           setUserWatchlist([...userWatchlist, formattedSymbol]);
           setSelectedSymbol(formattedSymbol);
         } else {
-          Alert.alert("Error", "Could not add stock to your DB watchlist.");
+          Alert.alert("Error", "Could not save the stock to the database.");
         }
       } catch (error) {
         Alert.alert("Network Error", "Could not reach the server.");
@@ -310,33 +354,33 @@ function HomeScreen({ route, navigation }) {
     setNewSymbol('');
   };
 
+  /**
+   * Invokes the Python machine learning pipeline for deep analysis.
+   */
   const runMachineLearningAnalysis = async () => {
-    // ensure we have a valid JWT before doing anything
     if (!token) return;
     setIsAILoading(true);
 
     try {
-            const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`, {headers: {'Authorization': `Bearer ${token}`}});
+      const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`, {
+        headers: {'Authorization': `Bearer ${token}`}
+      });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Extract the authentic mathematical predictions returned by the models
         const LstmResponse = data.analysis.lstm_result;
         const FnnResponse = data.analysis.fnn_result;
 
-        // Update the mobile UI state with the real long-term trend analysis
         setAiResult(LstmResponse);
 
-        // Feed the live model outputs into the AlarmFactory to evaluate if a push notification is required
+        // Factory pattern evaluation for potential critical device alerts
         const alarm = AlarmFactory.generateAlarm(selectedSymbol, LstmResponse, FnnResponse);
 
         if (alarm) {
             NotificationService.triggerLocalAlarm(alarm);
         }
-      }
-      else {
-        // Handle cases where the server responded, but the analysis failed internally
+      } else {
         Alert.alert("Analysis Failed", data.error || "Could not process market data.");
       }
 
@@ -346,6 +390,7 @@ function HomeScreen({ route, navigation }) {
       setIsAILoading(false);
     }
   };
+
   return (
     <View style={[styles.dashboardContainer, { backgroundColor: theme.background }]}>
       
@@ -356,12 +401,20 @@ function HomeScreen({ route, navigation }) {
           <Text style={[styles.dashboardSubtitle, { color: theme.subText }]}>{userEmail}</Text>
         </View>
         <View style={styles.toggleContainer}>
+          {/* Notification Bell */}
+          <TouchableOpacity 
+            onPress={() => { fetchNotifications(); setNotificationsVisible(true); }} 
+            style={{ marginRight: 15 }}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 24 }}>🔔</Text>
+          </TouchableOpacity>
           <Text style={[styles.toggleText, { color: theme.subText }]}>{isDarkMode ? 'Dark' : 'Light'}</Text>
           <CustomSwitch value={isDarkMode} onValueChange={setIsDarkMode} />
         </View>
       </View>
 
-      {/* Personalized Dynamic Stock Selector (Watchlist) */}
+      {/* Dynamic Stock Selector (Watchlist) */}
       <View style={styles.selectorContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {userWatchlist.map((symbol) => (
@@ -392,6 +445,7 @@ function HomeScreen({ route, navigation }) {
         </ScrollView>
       </View>
 
+      {/* Main Content Area */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
@@ -399,6 +453,7 @@ function HomeScreen({ route, navigation }) {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+          
           {/* Interactive Line Chart */}
           <View style={{ alignItems: 'center', marginBottom: 15 }}>
             {chartData.datasets[0].data.length > 0 ? (
@@ -422,7 +477,7 @@ function HomeScreen({ route, navigation }) {
             {isAILoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.aiButtonText}>Run AI Models on {selectedSymbol}</Text>}
           </TouchableOpacity>
 
-          {/* Display AI Results if available */}
+          {/* AI Results Display */}
           {aiResult && (
             <View style={[styles.aiResultCard, { backgroundColor: theme.cardBackground, borderColor: theme.primary }]}>
               <Text style={[styles.aiResultTitle, { color: theme.text }]}>AI Inference Insights</Text>
@@ -456,7 +511,7 @@ function HomeScreen({ route, navigation }) {
         <Text style={styles.primaryButtonText}>Log Out</Text>
       </TouchableOpacity>
 
-      {/* Add Stock Modal UI */}
+      {/* Add Stock Modal */}
       <Modal visible={isAddModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderColor }]}>
@@ -481,10 +536,40 @@ function HomeScreen({ route, navigation }) {
         </View>
       </Modal>
 
+      {/* Notification History Modal */}
+      <Modal visible={isNotificationsVisible} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderColor, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Notifications History</Text>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {notifications.length === 0 ? (
+                <Text style={{ color: theme.subText, textAlign: 'center', marginVertical: 20 }}>
+                  No alerts generated yet.
+                </Text>
+              ) : (
+                notifications.map((item, index) => (
+                  <View key={index} style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: theme.borderColor }}>
+                    <Text style={{ color: theme.text, fontWeight: 'bold' }}>{item.alert.type} Alert</Text>
+                    <Text style={{ color: theme.subText, marginTop: 4 }}>{item.alert.message}</Text>
+                    <Text style={{ color: theme.subText, fontSize: 10, marginTop: 4 }}>
+                      {new Date(item.sentAt).toLocaleString()}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.primaryButton, { marginTop: 15 }]} onPress={() => setNotificationsVisible(false)}>
+              <Text style={styles.primaryButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
-
 // ==========================================
 // MAIN APP EXPORT
 // ==========================================
