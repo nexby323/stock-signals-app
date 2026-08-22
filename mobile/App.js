@@ -275,7 +275,17 @@ function HomeScreen({ route, navigation }) {
     const formattedSymbol = newSymbol.trim().toUpperCase();
     if (formattedSymbol && !userWatchlist.includes(formattedSymbol) && token) {
       try {
-        // save the new asset in Prisma through the server
+        // Validate the symbol by checking if Yahoo Finance recognizes it.
+        const validationResponse = await fetch(`${SERVER_URL}/api/stocks?symbol=${formattedSymbol}`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        
+        // If the server returns an error (because Yahoo didn't find the stock), we stop here.
+        if (!validationResponse.ok) {
+            Alert.alert("Invalid Ticker", `Could not find market data for ${formattedSymbol}. Please check the symbol and try again.`);
+            return; // Exit the function early so we don't save a fake stock to the DB
+        }
+        // If validation passed, proceed to save the new asset in Prisma through the server
         const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {
           method: 'POST',
           headers: { 
@@ -301,34 +311,35 @@ function HomeScreen({ route, navigation }) {
   };
 
   const runMachineLearningAnalysis = async () => {
+    // ensure we have a valid JWT before doing anything
     if (!token) return;
     setIsAILoading(true);
 
     try {
-      const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`, {headers: {'Authorization': `Bearer ${token}`}});
-      
+            const response = await fetch(`${SERVER_URL}/api/analyze/${selectedSymbol}`, {headers: {'Authorization': `Bearer ${token}`}});
+
       const data = await response.json();
 
       if (response.ok && data.success) {
-        const mockLstmResponse = {
-            trend_direction: data.analysis.trend_direction || "BULLISH",
-            expected_change_pct: 8.5, // Mocked until Flask returns exact percentages
-            confidence_level: data.analysis.confidence_score || 85.0
-        };
-        const mockFnnResponse = {
-            trend_direction: "BULLISH",
-            probability_up: 0.88,
-            confidence_level: 82.0
-        };
+        // Extract the authentic mathematical predictions returned by the models
+        const LstmResponse = data.analysis.lstm_result;
+        const FnnResponse = data.analysis.fnn_result;
 
-        // Update UI with the result
-        setAiResult(mockLstmResponse);
-        // Process through Factory for Push Notifications
-        const alarm = AlarmFactory.generateAlarm(selectedSymbol, mockLstmResponse, mockFnnResponse);
+        // Update the mobile UI state with the real long-term trend analysis
+        setAiResult(LstmResponse);
+
+        // Feed the live model outputs into the AlarmFactory to evaluate if a push notification is required
+        const alarm = AlarmFactory.generateAlarm(selectedSymbol, LstmResponse, FnnResponse);
+
         if (alarm) {
             NotificationService.triggerLocalAlarm(alarm);
         }
       }
+      else {
+        // Handle cases where the server responded, but the analysis failed internally
+        Alert.alert("Analysis Failed", data.error || "Could not process market data.");
+      }
+
     } catch (error) {
       Alert.alert("Error", "Failed to communicate with AI microservice.");
     } finally {

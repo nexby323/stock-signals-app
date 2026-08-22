@@ -3,7 +3,7 @@ const cron = require('node-cron'); //for schedule jobs
 const cors = require('cors'); // for accessing from other devices to this server  
 const bcrypt = require('bcrypt'); // Added for secure password hashing
 const jwt = require('jsonwebtoken') // added this to use for user authentication
-
+const marketApiClient = require('./services/MarketAPIClient'); // for the /api/stocks route so we can acsess daily data fast (without going through the ai models)
 const SystemController = require('./controllers/SystemController'); //get the manager class
 const prisma = require('./config/db'); // get the Prisma Singleton instance for DB access
 
@@ -166,20 +166,17 @@ app.post('/api/login', async (req, res) => {
 
 /**
  * Route: GET /api/stocks
- * Description: Fetches analyzed market data using the SystemController and returns it to the client.
+ * Description: Fetches market data using the MarketAPIClient and returns it to the client.
  * Accepts a 'symbol' query parameter to dynamically fetch data for a specific stock.
  */
-app.get('/api/stocks',authenticateToken, async (req, res) => {
+app.get('/api/stocks', async (req, res) => {
     try {
-        // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL'
+        // Extract the symbol from the request query (e.g., ?symbol=NVDA), default to 'AAPL' (if lets say someone acsess this route from the browser. we dont want to crush so we'll use APPL as default)
         const symbol = (req.query.symbol || 'AAPL').toUpperCase();
-        console.log(`[Stocks Route] Requesting analysis via SystemController for: ${symbol}`);
+        console.log(`[Stocks Route] Requesting lightweight chart data via MarketAPIClient for: ${symbol}`);
         
-        // This call activates the analysis on the specific symbol
-        const controllerResult = await systemController.triggerManualAnalysis(symbol);
-        
-        const rawDailyData = controllerResult.rawDailyData;
-        const aiAnalysis = controllerResult.analysis;
+        // Direct call for raw daily data of the symbol (the asset)
+        const rawDailyData = await marketApiClient.fetchDailyData(symbol, 10);
 
         // Format the data for the mobile application dashboard
         const latestRecord = rawDailyData[rawDailyData.length - 1];
@@ -200,11 +197,11 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
             price: currentPrice,
             trend: trendString,
             isUp: isUp,
-            aiConfidence: aiAnalysis.confidence_score || 0 
+            aiConfidence: 0 // Set to 0 by default. The real AI confidence is fetched only when triggering the /api/analyze route.
         }];
 
-        // Prepare the chart dataset (last 6 data points)
-        const recentSlice = rawDailyData.slice(-6);
+        // Prepare the chart dataset (last 7 data points)
+        const recentSlice = rawDailyData.slice(-7);
         const chartPayload = {
             labels: recentSlice.map(item => {
                 const d = new Date(item.date);
@@ -213,7 +210,7 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
             datasets: [{ data: recentSlice.map(item => item.close) }]
         };
 
-        // Respond to the client with the tailored data
+        // Respond to the client with the tailored lightweight data
         res.status(200).json({
             stocks: stocksPayload,
             chart: chartPayload
@@ -221,7 +218,7 @@ app.get('/api/stocks',authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('[Stocks Route] Error:', error.message);
-        res.status(500).json({ error: 'Failed to process stock analysis.' });
+        res.status(500).json({ error: 'Failed to fetch lightweight stock data.' });
     }
 });
 
