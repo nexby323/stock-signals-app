@@ -275,7 +275,17 @@ function HomeScreen({ route, navigation }) {
     const formattedSymbol = newSymbol.trim().toUpperCase();
     if (formattedSymbol && !userWatchlist.includes(formattedSymbol) && token) {
       try {
-        // save the new asset in Prisma through the server
+        // Validate the symbol by checking if Yahoo Finance recognizes it.
+        const validationResponse = await fetch(`${SERVER_URL}/api/stocks?symbol=${formattedSymbol}`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        
+        // If the server returns an error (because Yahoo didn't find the stock), we stop here.
+        if (!validationResponse.ok) {
+            Alert.alert("Invalid Ticker", `Could not find market data for ${formattedSymbol}. Please check the symbol and try again.`);
+            return; // Exit the function early so we don't save a fake stock to the DB
+        }
+        // If validation passed, proceed to save the new asset in Prisma through the server
         const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist`, {
           method: 'POST',
           headers: { 
