@@ -176,7 +176,7 @@ app.get('/api/stocks', async (req, res) => {
         console.log(`[Stocks Route] Requesting lightweight chart data via MarketAPIClient for: ${symbol}`);
         
         // Direct call for raw daily data of the symbol (the asset)
-        const rawDailyData = await marketApiClient.fetchDailyData(symbol, 10);
+        const rawDailyData = await marketApiClient.fetchDailyData(symbol, 15);
 
         // Format the data for the mobile application dashboard
         const latestRecord = rawDailyData[rawDailyData.length - 1];

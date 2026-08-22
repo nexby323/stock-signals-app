@@ -346,7 +346,6 @@ function HomeScreen({ route, navigation }) {
       setIsAILoading(false);
     }
   };
-
   return (
     <View style={[styles.dashboardContainer, { backgroundColor: theme.background }]}>
       
