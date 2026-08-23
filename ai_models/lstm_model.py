@@ -248,8 +248,8 @@ class TrendLSTM:
             confidence_level = 0.0
         else:
             # Calculate the uncertainty penalty based on raw standard deviation.
-            # Scaling factor: 0.25 represents near-total uncertainty in a bounded [0,1] space.
-            max_expected_variance = 0.25 
+            # Scaling factor: 0.1 represents near-total uncertainty in a bounded [0,1] space.
+            max_expected_variance = 0.1 
             penalty = (std_scaled_pred / max_expected_variance) * 100.0 
             
             raw_confidence = 100.0 - penalty

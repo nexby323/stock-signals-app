@@ -345,6 +345,32 @@ app.post('/api/users/:id/watchlist', authenticateToken, async (req, res) => {
 });
 
 /**
+ * Route: DELETE /api/users/:id/watchlist/:symbol
+ * Description: Removes a stock from the user's watchlist.
+ */
+app.delete('/api/users/:id/watchlist/:symbol', authenticateToken, async (req, res) => {
+    const requestedUserId = parseInt(req.params.id);
+    const symbol = req.params.symbol.toUpperCase();
+
+    // ensure the user can only delete stocks from there own watchlist
+    if (req.user.userId !== requestedUserId) {
+        return res.status(403).json({ error: 'Cannot modify another user\'s watchlist.' });
+    }
+
+    try {
+        // Prismas disconnect command safely severs the many-to-many relationship
+        await prisma.user.update({
+            where: { id: requestedUserId },
+            data: { watchlist: { disconnect: { ticker: symbol } } }
+        });
+        res.status(200).json({ message: 'Stock removed successfully', symbol });
+    } catch (error) {
+        console.error('[Watchlist DELETE] Error:', error.message);
+        res.status(500).json({ error: 'Failed to remove stock' });
+    }
+});
+
+/**
  * Route: GET /api/users/:id/notifications
  * Description: Retrieves the chronological history of system alerts assigned to a specific user.
  *              Secured via JWT to ensure users can only access their own notification history.
