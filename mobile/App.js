@@ -354,6 +354,30 @@ function HomeScreen({ route, navigation }) {
     setNewSymbol('');
   };
 
+    /**
+   * deletes a stock from the users watchlist
+   */
+  const handleRemoveStock = async (symbolToRemove) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${SERVER_URL}/api/users/${userId}/watchlist/${symbolToRemove}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const updatedWatchlist = userWatchlist.filter(s => s !== symbolToRemove);
+        setUserWatchlist(updatedWatchlist);
+        // If they deleted the stock they were currently looking at, switch to another one
+        if (selectedSymbol === symbolToRemove) {
+            setSelectedSymbol(updatedWatchlist.length > 0 ? updatedWatchlist[0] : null);
+        }
+      }
+    } catch (error) {
+      Alert.alert("Network Error", "Could not reach the server to remove stock.");
+    }
+  };
+
   /**
    * Invokes the Python machine learning pipeline for deep analysis.
    */
@@ -426,6 +450,16 @@ function HomeScreen({ route, navigation }) {
                   borderColor: theme.borderColor }
               ]}
               onPress={() => setSelectedSymbol(symbol)}
+              onLongPress={() => {
+                Alert.alert(
+                    "Remove Stock", 
+                    `Do you want to delete ${symbol} from your watchlist?`, 
+                    [
+                        { text: "Cancel", style: "cancel" }, 
+                        { text: "Delete", style: "destructive", onPress: () => handleRemoveStock(symbol) }
+                    ]
+                );
+              }}
             >
               <Text style={[
                 styles.chipText, 

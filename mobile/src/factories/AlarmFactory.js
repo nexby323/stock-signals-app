@@ -50,24 +50,46 @@ class AlarmFactory {
         }
 
         // Scenario 3: Intraday Scalping Opportunity - Long-term is flat/down, but short-term momentum is spiking
-        if (isFnnBullish && !isLstmBullish && fnnConfidence > 85.0) {
+        if (isFnnBullish && !isLstmBullish && fnnConfidence >= CONFIDENCE_THRESHOLD) {
             return this._createPayload(
                 symbol,
                 "Short-Term Spike Detected ⚡",
-                `LSTM is bearish, but our FNN caught strong immediate momentum for ${symbol}. Good for a quick day-trade.`,
+                `Our long term model is bearish, but our short term model caught strong imm riate momentum for ${symbol} and it's confident is (${fnnConfidence.toFixed(1)}%). Good for a quick day-trade.`,
                 "warning",
                 "medium"
             );
         }
 
         // Scenario 4: Volatility Alert - High expected change but low confidence (scattered MC Dropout)
-        if (Math.abs(lstmResult.expected_change_pct) > 5.0 && lstmConfidence < 40.0) {
+        if (Math.abs(lstmResult.expected_change_pct) > 3 && lstmConfidence < 40.0) {
             return this._createPayload(
                 symbol,
                 "Extreme Volatility 🌪️",
                 `${symbol} is showing massive fluctuations, but model confidence is low (${lstmConfidence.toFixed(1)}%). Trade with extreme caution.`,
                 "info",
                 "low"
+            );
+        }
+
+        // Scenario 5: "Buy the Dip" Opportunity - Long-term is up, short-term is pulling back
+        if (isLstmBullish && !isFnnBullish && lstmConfidence >= CONFIDENCE_THRESHOLD) {
+            return this._createPayload(
+                symbol,
+                "Buy the Dip Opportunity 📉",
+                `The short-term momentum for ${symbol} is pulling back, but our long-term model recognizes a strong upward trend. Great chance to enter at a discount.`,
+                "info",
+                "medium"
+            );
+        }
+
+        // Scenario 6: Overwhelming LongTerm Trend (LSTM Solo Carry)
+        if (isLstmBullish && lstmConfidence >= CONFIDENCE_THRESHOLD && fnnConfidence < 60.0) {
+            return this._createPayload(
+                symbol,
+                "Massive Long-Term Breakout 📈",
+                `Our long-term model is ${lstmConfidence.toFixed(1)}% confident in an upward trend for ${symbol}. Short-term momentum is quiet, but macro signals are highly bullish.`,
+                "primary",
+                "medium"
             );
         }
 

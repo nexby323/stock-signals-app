@@ -93,7 +93,7 @@ class SystemController
             }
         }
 
-        console.log(`[SystemController] Daily batch completed. Processed ${batchResults.length} stocks.`);
+        console.log(`[SystemController] Daily batch completed. Processed ${dailySummery.length} stocks.`);
     }
     /**
      * initialize system when the server activates  
@@ -190,8 +190,13 @@ class SystemController
         // Extract the most recent market snapshot to update the Asset record
         const latestData = rawDailyData[rawDailyData.length - 1];
 
+        // Extract the LSTM and FNN results cleanly. 
+        // If missing, use an empty object to prevent crashes.
+        const lstm = analysis.lstm_result || {};
+        const fnn = analysis.fnn_result || {};
+
         try {
-            // 1. Referential Integrity Enforcement (Asset Upsert)
+            // Referential Integrity Enforcement (Asset Upsert)
             await this.dataBase.Asset.upsert({
                 where: { ticker: symbol },
                 update: {
@@ -206,11 +211,63 @@ class SystemController
                 }
             });
 
-            // 2. Anomaly Detection Logic
-            // A threshold of 80.0% is currently defined as the benchmark for a high-probability event.
-            const isAnomaly = analysis.confidence_level > 80.0;
+           // Anomaly Detection Logic
+            // The server runs the exact same business logic as the mobile app's AlarmFactory
+            // to ensure the DB records match the push notifications.
+            const isLstmBullish = lstm.trend_direction === "BULLISH";
+            const isFnnBullish = fnn.trend_direction === "BULLISH";
+            const lstmConf = lstm.confidence_level || 0.0;
+            const fnnConf = fnn.confidence_level || 0.0;
+            const expectedChange = lstm.expected_change_pct || 0.0;
+
+            let confidence_threshold = 75.0;
+            let alertMessage = null;
+            let alertType = "TREND";
+
+            // Scenario 1: The "Golden Cross" - Both models strongly agree on an UPWARD trend
+            if (isLstmBullish && isFnnBullish && lstmConf >= confidence_threshold && fnnConf >= confidence_threshold) {
+                alertMessage = `Strong Buy Signal 🚀: Both models predict an upward trend for ${symbol}.`;
+                alertType = "TREND";
+            } 
+            // Scenario 2: The "Market Crash" Warning - Both models strongly agree on a DOWNWARD trend
+            else if (!isLstmBullish && !isFnnBullish && lstmConf >= confidence_threshold && fnnConf >= confidence_threshold) {
+                alertMessage = `Critical Drop Warning ⚠️: Massive bearish convergence on ${symbol}.`;
+                alertType = "TREND";
+            } 
+            // Scenario 3: Intraday Scalping Opportunity - Long-term is flat/down, short-term is spiking
+            else if (isFnnBullish && !isLstmBullish && fnnConf > confidence_threshold) {
+                alertMessage = `Short-Term Spike ⚡: FNN caught strong immediate momentum for ${symbol}.`;
+                alertType = "ANOMALY";
+            } 
+            // Scenario 4: Volatility Alert - High expected change but low confidence
+            else if (Math.abs(expectedChange) > 2.5 && lstmConf < 40.0) {
+                alertMessage = `Extreme Volatility 🌪️: ${symbol} is showing massive fluctuations.`;
+                alertType = "ANOMALY";
+            } 
+            // Scenario 5: "Buy the Dip" Opportunity - Long-term is up, short-term is pulling back
+            else if (isLstmBullish && !isFnnBullish && lstmConf > confidence_threshold) {
+                alertMessage = `Buy the Dip Opportunity 📉: Short-term pullback on ${symbol}, but long-term trend is UP.`;
+                alertType = "TREND";
+            } 
+            // Scenario 6: Overwhelming Long-Term Trend (LSTM Solo Carry)
+            else if (isLstmBullish && lstmConf >= confidence_threshold && fnnConf < 60.0) {
+                alertMessage = `Massive Long-Term Breakout 📈: Long-term signals for ${symbol} are highly bullish.`;
+                alertType = "TREND";
+            } 
+            // --- NEW: THE SILENT DB LOG ---
+            // If no extreme trading scenarios were triggered above, but the long-term model is still highly confident (>80%),
+            // we capture this steady trend for the database.
+            // This ensures the notification bell acts as an audit trail for strong overarching trends, 
+            // even if the mobile app's AlarmFactory decides not to trigger an intrusive push notification for it.
+            else if (lstmConf >= confidence_threshold) {
+                alertMessage = `Long-Term Trend Update 📊: High confidence ${lstm.trend_direction} trend maintained for ${symbol} (${lstmConf.toFixed(1)}%).`;
+                alertType = "TREND";
+            }
+
+            // If alertMessage is populated by any of the scenarios, we have an anomaly worth recording.
+            const isAnomaly = alertMessage !== null;
             
-            // 3. User Resolution for Alerts
+            // User Resolution for Alerts
             // Query the database to identify all users who have this specific asset in their watchlist.
             const usersWatching = await this.dataBase.user.findMany({
                 where: { watchlist: { some: { ticker: symbol } } },
@@ -220,22 +277,22 @@ class SystemController
             // Map the retrieved user IDs into the expected Prisma format for nested insertions
             const userAlertsData = usersWatching.map(user => ({ userId: user.id }));
 
-            // 4. Transactional Database Insertion
+            // Transactional Database Insertion
             // Utilizing Prisma's 'Nested Writes' feature to atomically create the PredictionResult 
             // and simultaneously cascade the creation of associated Alerts and UserAlerts.
             const savedRecord = await this.dataBase.PredictionResult.create({
                 data: {
                     ticker: symbol,
-                    confidenceLevel: analysis.confidence_level || 0.0,
-                    predictedDirection: analysis.trend_direction || "UNKNOWN",
+                    confidenceLevel: analysis.lstm_result?.confidence_level || 0.0,
+                    predictedDirection: analysis.lstm_result?.trend_direction || "UNKNOWN",
                     riskFactor: 1, // Algorithmic placeholder for future risk-assessment expansion
                     
                     // Conditionally execute the nested write only if the anomaly threshold was breached
                     ...(isAnomaly && {
                         alert: {
                             create: {
-                                type: "TREND",
-                                message: `High confidence ${analysis.trend_direction} trend detected for ${symbol}!`,
+                                type: alertType,
+                                message: alertMessage,
                                 recipients: {
                                     create: userAlertsData // Populates the UserAlert junction table
                                 }
