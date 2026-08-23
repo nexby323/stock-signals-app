@@ -9,7 +9,7 @@ const prisma = require('./config/db'); // get the Prisma Singleton instance for 
 
 // The secret key used to for our tokens. 
 // It looks in the .env file first, and uses a temporary one if not found.
-const JWT_SECRET = process.env.JWT_SECRET || 'maayan_oshri_likes_boys_123';
+const JWT_SECRET = process.env.JWT_SECRET || 'this_is_a_super_secret_key_123';
 
 //creating the site and define enviroment variables 
 const app = express(); 

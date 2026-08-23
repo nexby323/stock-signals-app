@@ -50,11 +50,11 @@ class AlarmFactory {
         }
 
         // Scenario 3: Intraday Scalping Opportunity - Long-term is flat/down, but short-term momentum is spiking
-        if (isFnnBullish && !isLstmBullish && fnnConfidence >= CONFIDENCE_THRESHOLD) {
+        if (isFnnBullish && !isLstmBullish && fnnConfidence >= this.CONFIDENCE_THRESHOLD) {
             return this._createPayload(
                 symbol,
                 "Short-Term Spike Detected ⚡",
-                `Our long term model is bearish, but our short term model caught strong imm riate momentum for ${symbol} and it's confident is (${fnnConfidence.toFixed(1)}%). Good for a quick day-trade.`,
+                `Our long term model is bearish, but our short term model caught strong immediate momentum for ${symbol} and its confidence is (${fnnConfidence.toFixed(1)}%). Good for a quick day-trade.`,
                 "warning",
                 "medium"
             );
@@ -72,7 +72,7 @@ class AlarmFactory {
         }
 
         // Scenario 5: "Buy the Dip" Opportunity - Long-term is up, short-term is pulling back
-        if (isLstmBullish && !isFnnBullish && lstmConfidence >= CONFIDENCE_THRESHOLD) {
+        if (isLstmBullish && !isFnnBullish && lstmConfidence >= this.CONFIDENCE_THRESHOLD) {
             return this._createPayload(
                 symbol,
                 "Buy the Dip Opportunity 📉",
@@ -82,8 +82,8 @@ class AlarmFactory {
             );
         }
 
-        // Scenario 6: Overwhelming LongTerm Trend (LSTM Solo Carry)
-        if (isLstmBullish && lstmConfidence >= CONFIDENCE_THRESHOLD && fnnConfidence < 60.0) {
+        // Scenario 6: Overwhelming Long-Term Trend (LSTM Solo Carry)
+        if (isLstmBullish && lstmConfidence >= this.CONFIDENCE_THRESHOLD && fnnConfidence < 60.0) {
             return this._createPayload(
                 symbol,
                 "Massive Long-Term Breakout 📈",
