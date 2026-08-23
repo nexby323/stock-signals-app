@@ -240,7 +240,7 @@ class SystemController
                 alertType = "ANOMALY";
             } 
             // Scenario 4: Volatility Alert - High expected change but low confidence
-            else if (Math.abs(expectedChange) > 2.5 && lstmConf < 40.0) {
+            else if (Math.abs(expectedChange) > 3 && lstmConf < 45.0) {
                 alertMessage = `Extreme Volatility 🌪️: ${symbol} is showing massive fluctuations.`;
                 alertType = "ANOMALY";
             } 
@@ -254,7 +254,6 @@ class SystemController
                 alertMessage = `Massive Long-Term Breakout 📈: Long-term signals for ${symbol} are highly bullish.`;
                 alertType = "TREND";
             } 
-            // --- NEW: THE SILENT DB LOG ---
             // If no extreme trading scenarios were triggered above, but the long-term model is still highly confident (>80%),
             // we capture this steady trend for the database.
             // This ensures the notification bell acts as an audit trail for strong overarching trends, 
