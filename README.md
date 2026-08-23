@@ -80,3 +80,7 @@ message change needs to be applied in both places manually to stay in sync.
   from real model output.
 - The stored `predictedDirection` only reflects the LSTM's direction, even in scenarios 
   where the FNN's signal was the one that actually triggered the alert.
+
+## For graders
+This project requires a live PostgreSQL (Supabase) instance to run. Working 
+credentials have been shared separately (.env file is in the submission box in the telhai model) since committing real database credentials to a public repo isn't safe practice.
